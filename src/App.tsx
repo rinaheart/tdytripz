@@ -432,7 +432,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
+    <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-sm focus:bg-brand focus:text-white focus:text-xs focus:font-bold"
@@ -767,7 +767,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] px-4 py-2.5 rounded-md bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2"
+          className="fixed bottom-22 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] px-4 py-2.5 rounded-md bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2"
         >
           <CheckCircle2 aria-hidden="true" className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="truncate">{toastMessage}</span>
