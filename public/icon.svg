@@ -1,6 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
   <rect width="512" height="512" rx="112" fill="#1D4ED8"/>
-  <path d="M136 164H376" stroke="white" stroke-width="44" stroke-linecap="round"/>
-  <path d="M256 164V368" stroke="white" stroke-width="44" stroke-linecap="round"/>
-  <circle cx="348" cy="336" r="36" fill="#60A5FA"/>
+  <!-- Biểu tượng Pin địa điểm màu trắng -->
+  <path
+    d="M256 84C178.68 84 116 146.68 116 224C116 322.5 234.5 416.8 247.1 426.6C252.3 430.6 259.7 430.6 264.9 426.6C277.5 416.8 396 322.5 396 224C396 146.68 333.32 84 256 84Z"
+    fill="white"
+  />
+  <!-- Chữ T lồng chính giữa đầu Pin địa điểm -->
+  <path
+    d="M188 176H324C331.732 176 338 182.268 338 190V202C338 209.732 331.732 216 324 216H276V304C276 311.732 269.732 318 262 318H250C242.268 318 236 311.732 236 304V216H188C180.268 216 174 209.732 174 202V190C174 182.268 180.268 176 188 176Z"
+    fill="#1D4ED8"
+  />
+  <circle cx="308" cy="272" r="18" fill="#3B82F6"/>
 </svg>

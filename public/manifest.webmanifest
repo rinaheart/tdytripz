@@ -1,7 +1,7 @@
 {
   "id": "/",
-  "name": "TdyTime - Chia Tiền Nhóm",
-  "short_name": "TdyTime",
+  "name": "TdyTrip - Hà Nội",
+  "short_name": "TdyTrip - Hà Nội",
   "description": "Ứng dụng quản lý chi tiêu và chia tiền nhóm du lịch chuẩn số nguyên VND, đồng bộ hai chiều với Google Sheets.",
   "theme_color": "#1d4ed8",
   "background_color": "#f8fafc",

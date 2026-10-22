@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tdytime-pwa-v1';
+const CACHE_NAME = 'tdytime-pwa-v20261022-1511';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -40,8 +40,9 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  // Skip Vite dev client & Google Apps Script API calls
+  // Skip Vite dev client, version check endpoint & Google Apps Script API calls
   if (
+    url.pathname === '/version.json' ||
     url.pathname.startsWith('/@') ||
     url.pathname.startsWith('/src/') ||
     url.pathname.startsWith('/node_modules/') ||

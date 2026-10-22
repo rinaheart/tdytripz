@@ -4,6 +4,7 @@ import {
   DEFAULT_GAS_URL,
   DEFAULT_MEMBERS,
   DEFAULT_TRIP_CONFIG,
+  sortCategoriesTailOrder,
 } from '../config';
 import { resolveMemberAvatarPalette } from '../components/MemberAvatar';
 import type {
@@ -136,7 +137,9 @@ export function loadAppState(): AppStateData {
         return {
           config: { ...DEFAULT_TRIP_CONFIG, ...parsed.config },
           members: normalizeMembersList(parsed.members),
-          categories: Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES,
+          categories: sortCategoriesTailOrder(
+            Array.isArray(parsed.categories) ? parsed.categories : DEFAULT_CATEGORIES
+          ),
           expenses: parsed.expenses,
           history: Array.isArray(parsed.history) ? parsed.history : [],
           lastSyncedAt: parsed.lastSyncedAt ?? getNowGMT7(false),
@@ -354,7 +357,7 @@ export async function fetchAllFromGas(gasUrl?: string): Promise<{
             : undefined,
         categories:
           Array.isArray(json.categories) && json.categories.length > 0
-            ? json.categories
+            ? sortCategoriesTailOrder(json.categories)
             : undefined,
         expenses,
         lastSyncedAt: (json.serverTime || getNowGMT7(false)).slice(0, 16),
@@ -534,7 +537,8 @@ export async function syncAdminSettings(
 export async function processSyncQueue(
   currentState: AppStateData,
   onStateUpdated: (nextState: AppStateData, nextQueue: SyncQueueItem[]) => void,
-  onConflictDetected: (conflictItem: SyncQueueItem, serverRecord: ExpenseRecord) => void
+  onConflictDetected: (conflictItem: SyncQueueItem, serverRecord: ExpenseRecord) => void,
+  activeAdminPin?: string
 ): Promise<{ syncedCount: number; conflictCount: number; errorCount: number }> {
   const queue = loadSyncQueue();
   if (queue.length === 0) {
@@ -566,13 +570,14 @@ export async function processSyncQueue(
     try {
       const batchItems = actionableIndices.map((idx) => {
         const item = workingQueue[idx];
+        const effectivePin = item.adminPin || activeAdminPin;
         workingQueue[idx] = { ...item, status: 'syncing', lastAttemptAt: Date.now() };
         return {
           queueId: item.queueId,
           record: item.record,
           baseRev: item.baseRev,
           actor: item.record.updatedBy || item.record.createdBy,
-          adminPin: item.adminPin,
+          adminPin: effectivePin,
           deviceToken,
         };
       });
@@ -581,6 +586,7 @@ export async function processSyncQueue(
 
       const batchRes = await postToGas(gasUrl, {
         action: 'batchUpsertExpenses',
+        adminPin: activeAdminPin,
         deviceToken,
         items: batchItems,
       });
@@ -706,14 +712,32 @@ export async function processSyncQueue(
 
     // Chế độ Google Apps Script thực tế
     try {
-      const response = await postToGas(gasUrl, {
+      const effectivePin = item.adminPin || activeAdminPin;
+      let response = await postToGas(gasUrl, {
         action: 'upsertExpense',
         record: item.record,
         baseRev: item.baseRev,
         actor: item.record.updatedBy || item.record.createdBy,
-        adminPin: item.adminPin,
+        adminPin: effectivePin,
         deviceToken,
       });
+
+      // Tương thích ngược nếu GAS trên Sheet là bản cũ chưa hỗ trợ tham số adminPin trong upsertExpense
+      if (
+        response &&
+        !response.ok &&
+        response.error === 'PERMISSION_DENIED' &&
+        effectivePin
+      ) {
+        response = await postToGas(gasUrl, {
+          action: 'upsertExpense',
+          record: item.record,
+          baseRev: item.baseRev,
+          actor: item.record.payer || item.record.createdBy,
+          adminPin: effectivePin,
+          deviceToken,
+        });
+      }
 
       if (response && response.ok && response.id && response.rev) {
         const syncedRecord: ExpenseRecord = {

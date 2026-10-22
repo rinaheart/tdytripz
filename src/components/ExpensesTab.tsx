@@ -10,9 +10,11 @@ import {
   Play,
   Plus,
   Search,
+  ShieldCheck,
   Trash2,
   X,
 } from 'lucide-react';
+import { sortCategoriesTailOrder } from '../config';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
 import { formatDayGroupHeader, formatVND } from '../utils/format';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
@@ -25,6 +27,7 @@ interface ExpensesTabProps {
   currentUserId: string | null;
   isAdmin: boolean;
   onEditRecord: (record: ExpenseRecord) => void;
+  onRequestAdminUnlock?: (record: ExpenseRecord) => void;
   onSoftDeleteRecord: (record: ExpenseRecord) => void;
   onOpenAddModal: () => void;
 }
@@ -37,6 +40,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   currentUserId,
   isAdmin,
   onEditRecord,
+  onRequestAdminUnlock,
   onOpenAddModal,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -174,7 +178,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
             >
               <option value="all">Mọi danh mục</option>
               <option value="__transfer__">Chuyển tiền</option>
-              {categories.map((c) => (
+              {sortCategoriesTailOrder(categories).map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
@@ -236,6 +240,13 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                 <span>{showDeleted ? 'Ẩn đã xóa' : `Đã xóa (${deletedCount})`}</span>
               </button>
             )}
+          </div>
+        )}
+
+        {isAdmin && (
+          <div className="pt-1.5 border-t border-slate-100 flex items-center gap-1.5 text-[11px] font-semibold text-emerald-700">
+            <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+            <span>Quyền Admin đang mở — Chạm vào bất kỳ khoản chi nào để sửa hoặc xóa.</span>
           </div>
         )}
       </section>
@@ -306,12 +317,19 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                     : '';
                   const recipientMember = isTransfer ? getMember(recipientId) : undefined;
 
+                  const currentMemberName =
+                    members.find((m) => m.id === currentUserId)?.name?.trim().toLowerCase() || '';
+                  const isOwnRecord =
+                    Boolean(currentUserId) &&
+                    (exp.createdBy === currentUserId ||
+                      exp.payer === currentUserId ||
+                      (currentMemberName !== '' &&
+                        (String(exp.createdBy || '').trim().toLowerCase() === currentMemberName ||
+                          String(exp.payer || '').trim().toLowerCase() === currentMemberName)));
+
                   const canModify =
-                    !exp.deleted &&
-                    config.tripStatus !== 'completed' &&
-                    (isAdmin ||
-                      exp.createdBy === currentUserId ||
-                      exp.payer === currentUserId);
+                    isAdmin ||
+                    (!exp.deleted && config.tripStatus !== 'completed' && isOwnRecord);
 
                   const participantCount = Object.values(exp.splits || {}).filter(
                     (v) => v > 0
@@ -350,7 +368,10 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                               {exp.title}
                             </span>
                             {!canModify && !exp.deleted && (
-                              <Lock aria-hidden="true" className="w-3 h-3 mt-1 text-slate-500 shrink-0" />
+                              <Lock
+                                aria-hidden="true"
+                                className="w-3 h-3 mt-1 text-slate-400 shrink-0"
+                              />
                             )}
                             {hasSyncIssue && (
                               <AlertTriangle aria-hidden="true" className="w-3.5 h-3.5 mt-0.5 text-rose-700 shrink-0" />
@@ -405,7 +426,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
 
                         <div className="mt-0.5 text-[11px] font-mono tabular-nums">
                           {exp.deleted ? (
-                            <span className="text-rose-700 font-sans font-semibold">Đã xóa</span>
+                            <span className="text-rose-700 font-sans font-semibold">
+                              {isAdmin ? 'Đã xóa (Chạm để sửa)' : 'Đã xóa'}
+                            </span>
                           ) : isTransfer ? (
                             <span className="text-amber-800 font-sans font-medium">
                               Chuyển riêng
@@ -422,24 +445,23 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                     </>
                   );
 
-                  return canModify ? (
+                  return (
                     <button
                       key={exp.id}
                       type="button"
-                      onClick={() => onEditRecord(exp)}
-                      className="w-full px-3.5 py-3 flex items-start justify-between gap-3 transition-colors hover:bg-slate-50 active:bg-slate-100/80 cursor-pointer text-left"
-                    >
-                      {rowContent}
-                    </button>
-                  ) : (
-                    <div
-                      key={exp.id}
-                      className={`px-3.5 py-3 flex items-start justify-between gap-3 ${
-                        exp.deleted ? 'bg-rose-50/30 opacity-55' : ''
+                      onClick={() => {
+                        if (canModify) {
+                          onEditRecord(exp);
+                        } else if (onRequestAdminUnlock) {
+                          onRequestAdminUnlock(exp);
+                        }
+                      }}
+                      className={`w-full px-3.5 py-3 flex items-start justify-between gap-3 transition-colors hover:bg-slate-50 active:bg-slate-100/80 cursor-pointer text-left ${
+                        exp.deleted ? 'bg-rose-50/30 opacity-65' : ''
                       }`}
                     >
                       {rowContent}
-                    </div>
+                    </button>
                   );
                 })}
               </div>

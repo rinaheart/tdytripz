@@ -636,7 +636,8 @@ function processSingleExpenseUpsert_(itemBody, existingRowsMap, isAdmin, now) {
  * Upsert 1 khoản chi theo ID + Kiểm tra xung đột phiên bản (baseRev)
  */
 function handleUpsertExpense_(body) {
-  if (getTripStatus_() === 'completed') {
+  const isAdmin = body.adminPin ? verifyPin_(body.adminPin) : false;
+  if (getTripStatus_() === 'completed' && !isAdmin) {
     return jsonResponse_({
       ok: false,
       error: 'TRIP_COMPLETED',
@@ -644,7 +645,6 @@ function handleUpsertExpense_(body) {
     });
   }
 
-  const isAdmin = body.adminPin ? verifyPin_(body.adminPin) : false;
   const now = nowGMT7_();
   const rows = readSheetByHeader_('Expenses');
   const existingRowsMap = {};
@@ -660,7 +660,8 @@ function handleUpsertExpense_(body) {
  * Batch Upsert nhiều khoản chi trong 1 lần giữ LockService & 1 lần đọc bảng Expenses
  */
 function handleBatchUpsertExpenses_(body) {
-  if (getTripStatus_() === 'completed') {
+  const isAdmin = body.adminPin ? verifyPin_(body.adminPin) : false;
+  if (getTripStatus_() === 'completed' && !isAdmin) {
     return jsonResponse_({
       ok: false,
       error: 'TRIP_COMPLETED',
@@ -673,7 +674,6 @@ function handleBatchUpsertExpenses_(body) {
     return jsonResponse_({ ok: true, results: [] });
   }
 
-  const isAdmin = body.adminPin ? verifyPin_(body.adminPin) : false;
   const now = nowGMT7_();
   const rows = readSheetByHeader_('Expenses');
   const existingRowsMap = {};

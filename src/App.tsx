@@ -1,14 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Archive,
   CheckCircle2,
   ChevronDown,
   Download,
+  KeyRound,
   Moon,
   RefreshCw,
   Sun,
   User,
+  X,
 } from 'lucide-react';
 import { ConflictModal } from './components/ConflictModal';
 import { ExpenseFormModal } from './components/ExpenseFormModal';
@@ -20,6 +22,7 @@ import { PWAInstallModal } from './components/PWAInstallModal';
 import { SettingsTab } from './components/SettingsTab';
 import { SettlementTab } from './components/SettlementTab';
 import { WhoAmIModal } from './components/WhoAmIModal';
+import { APP_VERSION } from './config';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import {
   changeAdminPin,
@@ -134,6 +137,70 @@ export default function App() {
   } | null>(null);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [detectedNewVersion, setDetectedNewVersion] = useState<string | null>(null);
+  const [isUpdatingApp, setIsUpdatingApp] = useState<boolean>(false);
+  const lastVersionCheckRef = useRef<number>(0);
+
+  const [pendingAdminEditRecord, setPendingAdminEditRecord] = useState<ExpenseRecord | null>(null);
+  const [quickPinInput, setQuickPinInput] = useState<string>('');
+  const [quickPinError, setQuickPinError] = useState<string>('');
+  const [verifyingQuickPin, setVerifyingQuickPin] = useState<boolean>(false);
+
+  /**
+   * Kiểm tra phiên bản mới theo chuẩn quốc tế (PWA/SPA Lifecycle):
+   * - force = true: Kiểm tra ngay lập tức (khi vừa mở app, khi bấm nút Đồng bộ, hoặc khi có mạng lại).
+   * - force = false: Có throttle tối thiểu 5 phút khi chuyển tab (visibilitychange) và chu kỳ nền 30 phút.
+   */
+  const checkRemoteVersion = useCallback(async (force = false) => {
+    if (typeof window === 'undefined' || !navigator.onLine) return;
+    const now = Date.now();
+    if (!force && now - lastVersionCheckRef.current < 5 * 60 * 1000) {
+      return;
+    }
+    lastVersionCheckRef.current = now;
+
+    try {
+      const res = await fetch(`/version.json?t=${now}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          Pragma: 'no-cache',
+        },
+      });
+      if (!res.ok) return;
+      const data = (await res.json()) as { version?: string };
+      const remoteVer = String(data?.version || '').trim();
+      if (!remoteVer) return;
+
+      const parseVerIndex = (v: string) => Number(v.replace(/\D/g, '')) || 0;
+      const remoteIdx = parseVerIndex(remoteVer);
+      const localIdx = parseVerIndex(APP_VERSION);
+
+      if ((remoteIdx > 0 && remoteIdx > localIdx) || (remoteVer !== APP_VERSION && remoteIdx >= localIdx)) {
+        setDetectedNewVersion(remoteVer);
+      }
+    } catch {
+      // Ignore network errors while checking version
+    }
+  }, []);
+
+  const handleApplyNewVersion = useCallback(async () => {
+    setIsUpdatingApp(true);
+    try {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(registrations.map((reg) => reg.unregister()));
+      }
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      }
+    } catch {
+      // Ignore cleanup errors
+    } finally {
+      window.location.reload();
+    }
+  }, []);
 
   const showToast = useCallback((msg: string) => {
     setToastMessage(msg);
@@ -189,17 +256,20 @@ export default function App() {
           },
           (conflictItem, serverRecord) => {
             setActiveConflict({ item: conflictItem, serverRecord });
-          }
+          },
+          isAdmin ? adminPin : undefined
         );
       } finally {
         setIsSyncing(false);
       }
     },
-    [appState, effectiveOnline]
+    [appState, effectiveOnline, isAdmin, adminPin]
   );
 
   const handleRefreshSync = useCallback(
     async (silent = false) => {
+      // Mặc định khi bấm nút Đồng bộ (!silent) sẽ kiểm tra phiên bản mới ngay lập tức
+      void checkRemoteVersion(!silent);
       if (!effectiveOnline) {
         if (!silent) showToast('Đang Offline — Dữ liệu lưu trên máy');
         return;
@@ -239,10 +309,18 @@ export default function App() {
         setIsSyncing(false);
       }
     },
-    [effectiveOnline, triggerQueueSync, gasUrl, showToast]
+    [effectiveOnline, triggerQueueSync, gasUrl, showToast, checkRemoteVersion]
   );
 
-  // Tự động đồng bộ dữ liệu từ Google Sheet ngay khi mở ứng dụng (nếu đã có GAS URL)
+  // Kiểm tra phiên bản khi mở ứng dụng và định kỳ mỗi 30 phút theo chuẩn quốc tế
+  useEffect(() => {
+    void checkRemoteVersion(true);
+    const versionTimer = setInterval(() => {
+      void checkRemoteVersion(true);
+    }, 30 * 60 * 1000);
+    return () => clearInterval(versionTimer);
+  }, [checkRemoteVersion]);
+
   useEffect(() => {
     if (effectiveOnline && gasUrl) {
       handleRefreshSync(true);
@@ -252,11 +330,13 @@ export default function App() {
   useEffect(() => {
     const onOnline = () => {
       setIsOnline(true);
+      void checkRemoteVersion(true);
       triggerQueueSync();
     };
     const onOffline = () => setIsOnline(false);
     const onVisChange = () => {
       if (document.visibilityState === 'visible') {
+        void checkRemoteVersion(false);
         if (gasUrl) {
           handleRefreshSync(true);
         } else {
@@ -273,7 +353,7 @@ export default function App() {
       window.removeEventListener('offline', onOffline);
       document.removeEventListener('visibilitychange', onVisChange);
     };
-  }, [triggerQueueSync, gasUrl, handleRefreshSync]);
+  }, [triggerQueueSync, gasUrl, handleRefreshSync, checkRemoteVersion]);
 
   useEffect(() => {
     if (!effectiveOnline || syncQueue.length === 0 || isSyncing) return;
@@ -300,7 +380,7 @@ export default function App() {
   };
 
   const handleSaveExpenseRecord = async (record: ExpenseRecord, baseRev: number) => {
-    if (appState.config.tripStatus === 'completed') {
+    if (appState.config.tripStatus === 'completed' && !isAdmin) {
       showToast('Chuyến đi đã khóa sổ!');
       return;
     }
@@ -344,10 +424,17 @@ export default function App() {
   };
 
   const handleSoftDeleteExpense = async (record: ExpenseRecord) => {
-    if (appState.config.tripStatus === 'completed') return;
+    if (appState.config.tripStatus === 'completed' && !isAdmin) return;
     const actor = currentUserId || record.payer;
+    const currentMemberName =
+      appState.members.find((m) => m.id === currentUserId)?.name?.trim().toLowerCase() || '';
     const canModify =
-      isAdmin || record.createdBy === actor || record.payer === actor;
+      isAdmin ||
+      record.createdBy === actor ||
+      record.payer === actor ||
+      (currentMemberName !== '' &&
+        (String(record.createdBy || '').trim().toLowerCase() === currentMemberName ||
+          String(record.payer || '').trim().toLowerCase() === currentMemberName));
     if (!canModify) {
       showToast('Chỉ người tạo, người chi hoặc Admin được xóa.');
       return;
@@ -556,6 +643,26 @@ export default function App() {
       </header>
 
       <main id="main-content" className="max-w-2xl mx-auto px-3 md:px-6 pt-3 space-y-3.5">
+        {detectedNewVersion && (
+          <button
+            type="button"
+            onClick={handleApplyNewVersion}
+            disabled={isUpdatingApp}
+            className="w-full p-3 rounded-2xl bg-brand hover:bg-brand-hover text-white shadow-md shadow-brand/20 flex items-center justify-between gap-2 text-xs font-bold transition-all cursor-pointer active:scale-[0.99]"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <RefreshCw
+                aria-hidden="true"
+                className={`w-4 h-4 shrink-0 ${isUpdatingApp ? 'animate-spin' : ''}`}
+              />
+              <span className="truncate">Có phiên bản mới. Bấm để cập nhật.</span>
+            </div>
+            <span className="px-2 py-0.5 rounded-md bg-white/20 font-mono text-[11px] shrink-0">
+              {detectedNewVersion}
+            </span>
+          </button>
+        )}
+
         {appState.config.tripStatus === 'completed' && (
           <div className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center gap-2.5 text-xs shadow-sm">
             <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
@@ -630,6 +737,11 @@ export default function App() {
             onEditRecord={(rec) => {
               setEditingRecord(rec);
               setIsExpenseModalOpen(true);
+            }}
+            onRequestAdminUnlock={(rec) => {
+              setPendingAdminEditRecord(rec);
+              setQuickPinInput('');
+              setQuickPinError('');
             }}
             onSoftDeleteRecord={handleSoftDeleteExpense}
             onOpenAddModal={() => {
@@ -836,6 +948,103 @@ export default function App() {
         onInstallNative={installPWA}
         onClose={() => setIsPWAInstallOpen(false)}
       />
+
+      {pendingAdminEditRecord && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="quick-admin-pin-title"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4"
+        >
+          <div className="w-full max-w-xs bg-white rounded-2xl border border-slate-200 shadow-2xl p-4 space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-brand-soft text-brand flex items-center justify-center shrink-0">
+                  <KeyRound aria-hidden="true" className="w-4 h-4" />
+                </div>
+                <h2 id="quick-admin-pin-title" className="text-sm font-bold text-slate-900 truncate">
+                  Mở khóa Admin để sửa
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingAdminEditRecord(null)}
+                aria-label="Đóng"
+                className="w-7 h-7 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center"
+              >
+                <X aria-hidden="true" className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Khoản <strong className="text-slate-900">&ldquo;{pendingAdminEditRecord.title}&rdquo;</strong> do thành viên khác tạo. Nhập mã PIN Admin để mở quyền chỉnh sửa mọi khoản chi.
+            </p>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!quickPinInput.trim() || verifyingQuickPin) return;
+                setVerifyingQuickPin(true);
+                setQuickPinError('');
+                try {
+                  const res = await verifyAdminPin(quickPinInput);
+                  if (res.ok) {
+                    const targetRec = pendingAdminEditRecord;
+                    setIsAdmin(true);
+                    setAdminPin(quickPinInput.trim());
+                    setPendingAdminEditRecord(null);
+                    setQuickPinInput('');
+                    showToast('Đã mở quyền Admin');
+                    setEditingRecord(targetRec);
+                    setIsExpenseModalOpen(true);
+                  } else {
+                    setQuickPinError(res.error || 'Mã PIN không đúng');
+                  }
+                } finally {
+                  setVerifyingQuickPin(false);
+                }
+              }}
+              className="space-y-2.5"
+            >
+              <input
+                type="password"
+                name="quickAdminPin"
+                inputMode="numeric"
+                autoComplete="off"
+                autoFocus
+                value={quickPinInput}
+                onChange={(e) => {
+                  setQuickPinInput(e.target.value);
+                  setQuickPinError('');
+                }}
+                placeholder="Nhập mã PIN Admin…"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-300 focus:border-brand text-sm font-mono text-slate-900"
+              />
+
+              {quickPinError && (
+                <div className="text-[11px] font-semibold text-rose-600">{quickPinError}</div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setPendingAdminEditRecord(null)}
+                  className="min-h-[36px] px-3 rounded-xl border border-slate-200 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                >
+                  Hủy
+                </button>
+                <button
+                  type="submit"
+                  disabled={!quickPinInput.trim() || verifyingQuickPin}
+                  className="min-h-[36px] px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold disabled:opacity-50"
+                >
+                  {verifyingQuickPin ? 'Đang mở…' : 'Mở khóa & Sửa'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       <Navbar
         activeTab={activeTab}

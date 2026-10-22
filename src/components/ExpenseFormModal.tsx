@@ -12,6 +12,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import { sortCategoriesTailOrder } from '../config';
 import type {
   Category,
   ExpenseRecord,
@@ -66,9 +67,9 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   );
   const visibleCategories = useMemo(
     () =>
-      categories
-        .filter((c) => !c.hidden || c.id === editingRecord?.categoryId)
-        .sort((a, b) => a.order - b.order),
+      sortCategoriesTailOrder(
+        categories.filter((c) => !c.hidden || c.id === editingRecord?.categoryId)
+      ),
     [categories, editingRecord]
   );
 
@@ -104,39 +105,62 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       defaultShares[m.id] = m.defaultWeight || 1;
     }
 
+    const resolveMemberId = (idOrName: string): string => {
+      const clean = String(idOrName || '').trim();
+      if (!clean) return '';
+      const byId = activeMembers.find((m) => m.id === clean);
+      if (byId) return byId.id;
+      const byName = activeMembers.find(
+        (m) => m.name.trim().toLowerCase() === clean.toLowerCase()
+      );
+      return byName ? byName.id : clean;
+    };
+
     if (editingRecord) {
       setRecordId(editingRecord.id);
       setRecordType(editingRecord.type);
       setTitle(editingRecord.title);
       setRawDigits(String(editingRecord.amount));
       setSelectedMultiplier(1);
-      setPayer(editingRecord.payer);
+      const resolvedPayer =
+        resolveMemberId(editingRecord.payer) || activeMembers[0]?.id || currentUserId;
+      setPayer(resolvedPayer);
       setCategoryId(editingRecord.categoryId || 'cat_other');
       setSpentAt(editingRecord.spentAt || getNowGMT7(false));
       setNote(editingRecord.note || '');
       setSplitMode(editingRecord.splitMode || 'equal');
 
       if (editingRecord.type === 'transfer') {
+        const rawRecKey = Object.keys(editingRecord.splits || {})[0] || '';
         const recKey =
-          Object.keys(editingRecord.splits || {})[0] ||
-          activeMembers.find((m) => m.id !== editingRecord.payer)?.id ||
+          resolveMemberId(rawRecKey) ||
+          activeMembers.find((m) => m.id !== resolvedPayer)?.id ||
           '';
         setRecipientId(recKey);
         setSelectedMembers(defaultMemberIds);
         setSharesMap(defaultShares);
         setExactMap({});
       } else {
-        const splitKeys = Object.keys(editingRecord.splits || {}).filter(
-          (k) => (editingRecord.splits[k] || 0) > 0
-        );
+        const splitKeys = Object.keys(editingRecord.splits || {})
+          .filter((k) => (editingRecord.splits[k] || 0) > 0)
+          .map(resolveMemberId)
+          .filter((id) => defaultMemberIds.includes(id));
+
+        const metaSelected = (editingRecord.splitMeta?.selectedMembers || [])
+          .map(resolveMemberId)
+          .filter((id) => defaultMemberIds.includes(id));
+
         setSelectedMembers(
-          editingRecord.splitMeta?.selectedMembers ||
-            (splitKeys.length > 0 ? splitKeys : defaultMemberIds)
+          metaSelected.length > 0
+            ? metaSelected
+            : splitKeys.length > 0
+            ? splitKeys
+            : defaultMemberIds
         );
         setSharesMap(editingRecord.splitMeta?.shares || defaultShares);
         setExactMap(editingRecord.splitMeta?.exactAmounts || { ...editingRecord.splits });
         const fallbackRec =
-          activeMembers.find((m) => m.id !== editingRecord.payer)?.id ||
+          activeMembers.find((m) => m.id !== resolvedPayer)?.id ||
           activeMembers[0]?.id ||
           '';
         setRecipientId(fallbackRec);
@@ -162,15 +186,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       setSharesMap(defaultShares);
       setExactMap({});
     }
-  }, [
-    isOpen,
-    editingRecord,
-    activeMembers,
-    currentUserId,
-    config.defaultSplitMode,
-    config.suggestMultipliers,
-    visibleCategories,
-  ]);
+  }, [isOpen, editingRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const digitCount = rawDigits.length;
   const numericBase = parseInt(rawDigits || '0', 10) || 0;
@@ -256,13 +272,17 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   );
 
   const canModifyRecord = useMemo(() => {
-    if (!editingRecord) return true;
+    if (!editingRecord || isAdmin) return true;
+    const currentMemberName =
+      members.find((m) => m.id === currentUserId)?.name?.trim().toLowerCase() || '';
     return (
-      isAdmin ||
       editingRecord.createdBy === currentUserId ||
-      editingRecord.payer === currentUserId
+      editingRecord.payer === currentUserId ||
+      (currentMemberName !== '' &&
+        (String(editingRecord.createdBy || '').trim().toLowerCase() === currentMemberName ||
+          String(editingRecord.payer || '').trim().toLowerCase() === currentMemberName))
     );
-  }, [editingRecord, isAdmin, currentUserId]);
+  }, [editingRecord, isAdmin, currentUserId, members]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -383,7 +403,9 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   };
 
   const enabledModes: SplitMode[] =
-    config.enabledSplitModes && config.enabledSplitModes.length > 0
+    isAdmin
+      ? ['equal', 'shares', 'exact']
+      : config.enabledSplitModes && config.enabledSplitModes.length > 0
       ? config.enabledSplitModes
       : ['equal', 'shares', 'exact'];
 
@@ -962,7 +984,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             </div>
           )}
 
-          {editingRecord && onSoftDelete && canModifyRecord && (
+          {editingRecord && !editingRecord.deleted && onSoftDelete && canModifyRecord && (
             <div className="pt-1 border-t border-slate-100">
               {!confirmDeleteStep ? (
                 <button
@@ -1018,6 +1040,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             >
               {pendingRangeConfirm
                 ? 'Xác nhận lưu'
+                : editingRecord?.deleted
+                ? 'Khôi phục & Lưu'
                 : editingRecord
                 ? 'Lưu thay đổi'
                 : recordType === 'transfer'

@@ -8,6 +8,8 @@ const metaEnv = (import.meta as unknown as { env?: Record<string, string> }).env
  * Dán link https://script.google.com/macros/s/.../exec vào chuỗi bên dưới
  * để mọi thành viên mở link web app là tự động kết nối và tải dữ liệu từ Sheet.
  */
+export { APP_NAME, APP_VERSION } from './version';
+
 export const DEFAULT_GAS_URL: string =
   metaEnv?.VITE_GAS_URL ||
   'https://script.google.com/macros/s/AKfycbz4wJVFOsvnJ6aY_S62gnQ_Vazjm9qbVvnbImbEaDaSiEmZZqAjAHLy9oZXxIR0fnQ/exec';
@@ -104,9 +106,9 @@ export const DEFAULT_MEMBERS: Member[] = [
 
 export const DEFAULT_CATEGORIES: Category[] = [
   {
-    id: 'cat_flight',
-    name: 'Vé máy bay / Tàu xe',
-    icon: 'Plane',
+    id: 'cat_food',
+    name: 'Ăn uống',
+    icon: 'Utensils',
     order: 1,
     hidden: false,
   },
@@ -118,23 +120,23 @@ export const DEFAULT_CATEGORIES: Category[] = [
     hidden: false,
   },
   {
-    id: 'cat_food',
-    name: 'Ăn uống',
-    icon: 'Utensils',
-    order: 3,
-    hidden: false,
-  },
-  {
     id: 'cat_hotel',
     name: 'Khách sạn / Lưu trú',
     icon: 'Hotel',
-    order: 4,
+    order: 3,
     hidden: false,
   },
   {
     id: 'cat_ticket',
     name: 'Vé tham quan',
     icon: 'Ticket',
+    order: 4,
+    hidden: false,
+  },
+  {
+    id: 'cat_flight',
+    name: 'Vé đi/về',
+    icon: 'Plane',
     order: 5,
     hidden: false,
   },
@@ -146,6 +148,52 @@ export const DEFAULT_CATEGORIES: Category[] = [
     hidden: false,
   },
 ];
+
+/**
+ * Chuẩn hóa thứ tự danh mục: ưu tiên các mục chi tiêu hàng ngày lên đầu,
+ * và luôn xếp cuối theo đúng thứ tự: Vé tham quan > Vé đi/về > Khác.
+ */
+export function sortCategoriesTailOrder(categories: Category[]): Category[] {
+  const getCategoryRank = (cat: Category): number => {
+    const id = (cat.id || '').toLowerCase();
+    const name = (cat.name || '').toLowerCase();
+    const icon = cat.icon || '';
+
+    if (id === 'cat_other' || name === 'khác') {
+      return 930;
+    }
+    if (
+      id === 'cat_flight' ||
+      icon === 'Plane' ||
+      icon === '✈️' ||
+      name.includes('vé đi') ||
+      name.includes('máy bay') ||
+      name.includes('tàu xe')
+    ) {
+      return 920;
+    }
+    if (
+      id === 'cat_ticket' ||
+      icon === 'Ticket' ||
+      icon === '🎟️' ||
+      name.includes('tham quan') ||
+      name.includes('vé chơi')
+    ) {
+      return 910;
+    }
+    return cat.order || 10;
+  };
+
+  return [...categories]
+    .map((c) =>
+      c.id === 'cat_flight' && c.name === 'Vé máy bay / Tàu xe'
+        ? { ...c, name: 'Vé đi/về' }
+        : c
+    )
+    .sort((a, b) => getCategoryRank(a) - getCategoryRank(b))
+    .map((c, idx) => ({ ...c, order: idx + 1 }));
+}
+
 
 const ALL_MEMBER_IDS = DEFAULT_MEMBERS.map((m) => m.id);
 
