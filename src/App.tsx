@@ -656,18 +656,36 @@ export default function App() {
               setAdminPin('');
               showToast('Đã khóa Admin');
             }}
-            onChangeAdminPin={(oldPin, newPin) =>
-              changeAdminPin(oldPin, newPin, currentUserId || 'admin')
-            }
+            onChangeAdminPin={async (oldPin, newPin) => {
+              const res = await changeAdminPin(
+                oldPin,
+                newPin,
+                currentUserId || 'admin'
+              );
+              if (res.ok) {
+                setAdminPin(newPin.trim());
+              }
+              return res;
+            }}
             onUpdateMembers={async (nextMembers: Member[]) => {
+              if (!isAdmin) return;
               const nextState = { ...appState, members: nextMembers };
               saveAppState(nextState);
               setAppState(nextState);
+              if (
+                currentUserId &&
+                !nextMembers.some((m) => m.id === currentUserId)
+              ) {
+                const fallbackId = nextMembers[0]?.id || '';
+                setCurrentUserState(fallbackId);
+                setCurrentUserId(fallbackId);
+              }
               await syncAdminSettings(adminPin, currentUserId || 'admin', {
                 members: nextMembers,
               });
             }}
             onUpdateCategories={async (nextCategories: Category[]) => {
+              if (!isAdmin) return;
               const nextState = { ...appState, categories: nextCategories };
               saveAppState(nextState);
               setAppState(nextState);
@@ -676,6 +694,7 @@ export default function App() {
               });
             }}
             onUpdateConfig={async (nextConfig: TripConfig) => {
+              if (!isAdmin) return;
               const nextState = { ...appState, config: nextConfig };
               saveAppState(nextState);
               setAppState(nextState);
@@ -684,6 +703,7 @@ export default function App() {
               });
             }}
             onSaveGasUrl={(url) => {
+              if (!isAdmin) return;
               setGasUrl(url);
               setGasUrlState(url.trim());
             }}

@@ -127,6 +127,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setCfgForm(config);
   }, [config]);
 
+  useEffect(() => {
+    if (!isAdmin) {
+      setEditingMemberId(null);
+      setMemForm(null);
+      setShowChangePin(false);
+      setConfirmResetDemo(false);
+      setShowRawCodeGs(false);
+    }
+  }, [isAdmin]);
+
   const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pinInput.trim()) return;
@@ -137,7 +147,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         onShowToast(res.error || 'Sai PIN');
       } else {
         setPinInput('');
-        onShowToast('Đã mở Admin');
+        onShowToast('Đã mở khóa Admin');
       }
     } finally {
       setVerifyingPin(false);
@@ -146,6 +156,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSaveNewPin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!isAdmin) return;
     const res = await onChangeAdminPin(oldPinInput, newPinInput);
     if (res.ok) {
       setShowChangePin(false);
@@ -157,13 +168,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     }
   };
 
+  const isMemberUsed = (memberId: string) =>
+    expenses.some(
+      (e) =>
+        !e.deleted &&
+        (e.payer === memberId || Math.round(e.splits?.[memberId] || 0) > 0)
+    );
+
   const startEditMember = (m: Member) => {
+    if (!isAdmin) return;
     setEditingMemberId(m.id);
     setMemForm({ ...m });
   };
 
   const handleSaveMember = async () => {
-    if (!memForm || !memForm.name.trim()) return;
+    if (!isAdmin || !memForm || !memForm.name.trim()) return;
     const next = members
       .map((m) =>
         m.id === memForm.id
@@ -204,6 +223,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     await onUpdateMembers(next);
     setNewMemberName('');
     onShowToast(`+${cleanName}`);
+  };
+
+  const handleDeleteMember = async (m: Member) => {
+    if (!isAdmin) return;
+    if (members.length <= 1) {
+      onShowToast('Cần tối thiểu 1 thành viên');
+      return;
+    }
+    if (isMemberUsed(m.id)) {
+      onShowToast(`${m.name} đã có chi tiêu, không thể xóa`);
+      return;
+    }
+    const next = members.filter((item) => item.id !== m.id);
+    if (editingMemberId === m.id) {
+      setEditingMemberId(null);
+      setMemForm(null);
+    }
+    await onUpdateMembers(next);
+    onShowToast(`Đã xóa ${m.name}`);
   };
 
   const isCategoryUsed = (catId: string) =>
@@ -262,6 +300,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   };
 
   const handleCopyCodeGs = async () => {
+    if (!isAdmin) return;
     const ok = await copyToClipboard(GOOGLE_APPS_SCRIPT_CODE);
     if (ok) {
       setCopiedCode(true);
@@ -285,152 +324,48 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* Top Bar: Sub-nav + Compact Admin PIN Lock */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/70 rounded-md flex-1 min-w-[220px]">
-          {(
-            [
-              { id: 'members', label: 'Thành viên', icon: Users },
-              { id: 'trip', label: 'Chuyến đi', icon: FolderKanban },
-              { id: 'system', label: 'Hệ thống', icon: Cloud },
-            ] as const
-          ).map((sec) => {
-            const Icon = sec.icon;
-            const active = activeSection === sec.id;
-            return (
-              <button
-                key={sec.id}
-                type="button"
-                aria-pressed={active}
-                onClick={() => setActiveSection(sec.id)}
-                className={`min-h-[36px] px-2.5 py-1 rounded-sm text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
-                  active
-                    ? 'bg-white text-brand shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Icon aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">{sec.label}</span>
-                {sec.id === 'system' && (
-                  <span
-                    aria-hidden="true"
-                    className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                      isConnectedSheet ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                  />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Inline Admin PIN */}
-        {!isAdmin ? (
-          <form onSubmit={handleVerifyPin} className="flex items-center gap-1" autoComplete="off">
-            <div className="relative flex items-center">
-              <Lock aria-hidden="true" className="w-3.5 h-3.5 text-slate-600 absolute left-2.5 pointer-events-none" />
-              <input
-                type={showPinText ? 'text' : 'password'}
-                name="trip_admin_pin_code"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                spellCheck={false}
-                value={pinInput}
-                onChange={(e) => setPinInput(e.target.value)}
-                placeholder="PIN (1234)…"
-                aria-label="PIN Admin"
-                className="w-32 sm:w-36 min-h-[36px] pl-7 pr-7 rounded-sm border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-brand"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPinText((prev) => !prev)}
-                aria-label={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
-                title={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
-                className="absolute right-1.5 p-1 text-slate-500 hover:text-slate-800 transition-colors"
-              >
-                {showPinText ? (
-                  <EyeOff aria-hidden="true" className="w-3.5 h-3.5" />
-                ) : (
-                  <Eye aria-hidden="true" className="w-3.5 h-3.5" />
-                )}
-              </button>
-            </div>
+      {/* Top Bar: Sub-nav 3 mục (Mã PIN chỉ hiện trong mục Hệ thống) */}
+      <div className="grid grid-cols-3 gap-1 p-1 bg-slate-200/70 rounded-md">
+        {(
+          [
+            { id: 'members', label: 'Thành viên', icon: Users },
+            { id: 'trip', label: 'Chuyến đi', icon: FolderKanban },
+            { id: 'system', label: 'Hệ thống', icon: Cloud },
+          ] as const
+        ).map((sec) => {
+          const Icon = sec.icon;
+          const active = activeSection === sec.id;
+          return (
             <button
-              type="submit"
-              disabled={verifyingPin || !pinInput.trim()}
-              className="min-h-[36px] px-3 rounded-sm bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold transition-colors shrink-0"
-            >
-              {verifyingPin ? 'Đang mở…' : 'Mở'}
-            </button>
-          </form>
-        ) : (
-          <div className="flex items-center gap-1">
-            <button
+              key={sec.id}
               type="button"
-              onClick={() => setShowChangePin(!showChangePin)}
-              aria-expanded={showChangePin}
-              title="Đổi PIN"
-              className="min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors"
+              aria-pressed={active}
+              onClick={() => setActiveSection(sec.id)}
+              className={`min-h-[36px] px-2.5 py-1 rounded-sm text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap ${
+                active
+                  ? 'bg-white text-brand shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
             >
-              <KeyRound aria-hidden="true" className="w-3.5 h-3.5" />
-              <span>PIN</span>
+              <Icon aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate">{sec.label}</span>
+              {sec.id === 'system' && (
+                <span
+                  aria-hidden="true"
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    isConnectedSheet ? 'bg-emerald-500' : 'bg-amber-500'
+                  }`}
+                />
+              )}
             </button>
-            <button
-              type="button"
-              onClick={onLockAdmin}
-              title="Khóa Admin"
-              className="min-h-[36px] px-2.5 rounded-sm bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 transition-colors"
-            >
-              <Unlock aria-hidden="true" className="w-3.5 h-3.5" />
-              <span>Admin</span>
-            </button>
-          </div>
-        )}
+          );
+        })}
       </div>
-
-      {/* Form Đổi PIN (chỉ hiện khi bấm nút PIN) */}
-      {isAdmin && showChangePin && (
-        <form
-          onSubmit={handleSaveNewPin}
-          className="p-2.5 rounded-md bg-white border border-slate-200 flex items-center gap-2"
-        >
-          <input
-            type="password"
-            name="oldPin"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="PIN cũ"
-            value={oldPinInput}
-            onChange={(e) => setOldPinInput(e.target.value)}
-            placeholder="PIN cũ…"
-            className="flex-1 min-w-0 min-h-[36px] px-2.5 rounded-sm border border-slate-300 text-xs font-mono"
-          />
-          <input
-            type="password"
-            name="newPin"
-            inputMode="numeric"
-            autoComplete="off"
-            spellCheck={false}
-            aria-label="PIN mới"
-            value={newPinInput}
-            onChange={(e) => setNewPinInput(e.target.value)}
-            placeholder="PIN mới…"
-            className="flex-1 min-w-0 min-h-[36px] px-2.5 rounded-sm border border-slate-300 text-xs font-mono"
-          />
-          <button
-            type="submit"
-            className="min-h-[36px] px-3 rounded-sm bg-brand hover:bg-brand-hover text-white text-xs font-bold shrink-0 transition-colors"
-          >
-            Lưu
-          </button>
-        </form>
-      )}
 
       {/* TAB 1: THÀNH VIÊN & STK */}
       {activeSection === 'members' && (
         <section className="p-3 rounded-md bg-white border border-slate-200 space-y-2.5">
-          {/* Thêm thành viên (Mờ khi chưa mở Admin) */}
+          {/* Thêm thành viên (Cần mở PIN ở mục Hệ thống) */}
           <div
             className={`flex items-center gap-1.5 ${
               !isAdmin ? 'opacity-40 pointer-events-none select-none' : ''
@@ -444,6 +379,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               disabled={!isAdmin}
               value={newMemberName}
               onChange={(e) => setNewMemberName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleAddMember();
+                }
+              }}
               placeholder="Thêm thành viên…"
               className="flex-1 min-h-[36px] px-3 rounded-sm border border-slate-300 text-xs font-medium"
             />
@@ -463,7 +404,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             {[...members]
               .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
               .map((m) => {
-                const isEditingThis = editingMemberId === m.id && memForm;
+                const isEditingThis = isAdmin && editingMemberId === m.id && memForm;
+                const usedInExpenses = isMemberUsed(m.id);
                 return (
                   <div key={m.id} className="p-2.5 space-y-2">
                     <div className="flex items-center justify-between gap-2">
@@ -485,6 +427,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
+                        {/* Nút Copy STK cho user bình thường */}
                         {m.accountNo && (
                           <button
                             type="button"
@@ -500,15 +443,44 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                           </button>
                         )}
 
+                        {/* Nút sửa thông tin & STK thành viên (Chỉ Admin) */}
                         <button
                           type="button"
+                          disabled={!isAdmin}
                           onClick={() =>
                             isEditingThis ? setEditingMemberId(null) : startEditMember(m)
                           }
-                          className="min-h-[32px] px-2.5 rounded-sm bg-brand-soft hover:bg-brand-border/50 text-brand text-xs font-bold flex items-center gap-1 transition-colors"
+                          title={isAdmin ? 'Sửa tên & STK' : 'Cần mở PIN ở mục Hệ thống'}
+                          className={`min-h-[32px] px-2.5 rounded-sm bg-brand-soft hover:bg-brand-border/50 text-brand text-xs font-bold flex items-center gap-1 transition-colors ${
+                            !isAdmin ? 'opacity-40 pointer-events-none select-none' : ''
+                          }`}
                         >
                           <CreditCard aria-hidden="true" className="w-3.5 h-3.5" />
                           <span>{isEditingThis ? 'Đóng' : 'STK'}</span>
+                        </button>
+
+                        {/* Nút xóa thành viên (Chỉ Admin) */}
+                        <button
+                          type="button"
+                          disabled={!isAdmin}
+                          onClick={() => handleDeleteMember(m)}
+                          aria-label={`Xóa ${m.name}`}
+                          title={
+                            !isAdmin
+                              ? 'Cần mở PIN ở mục Hệ thống'
+                              : usedInExpenses
+                              ? 'Thành viên đã có chi tiêu'
+                              : `Xóa ${m.name}`
+                          }
+                          className={`w-8 h-8 rounded-sm border flex items-center justify-center transition-colors ${
+                            !isAdmin
+                              ? 'border-slate-200 text-slate-400 opacity-40 pointer-events-none select-none'
+                              : usedInExpenses
+                              ? 'border-slate-200 text-slate-300 hover:bg-slate-50'
+                              : 'border-rose-200 hover:bg-rose-50 text-rose-600'
+                          }`}
+                        >
+                          <Trash2 aria-hidden="true" className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -520,13 +492,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                           name="memberName"
                           autoComplete="off"
                           aria-label="Tên thành viên"
-                          disabled={!isAdmin}
                           value={memForm.name}
                           onChange={(e) => setMemForm({ ...memForm, name: e.target.value })}
                           placeholder="Tên…"
-                          className={`w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 text-xs font-semibold ${
-                            !isAdmin ? 'bg-slate-100 text-slate-400' : 'bg-white'
-                          }`}
+                          className="w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-semibold"
                         />
                         <div>
                           <input
@@ -821,9 +790,126 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       )}
 
-      {/* TAB 3: HỆ THỐNG (GOOGLE SHEET, SHARE LINK, ADMIN TOOLS, HISTORY) */}
+      {/* TAB 3: HỆ THỐNG (MÃ PIN ADMIN, GOOGLE SHEET, SHARE LINK, ADMIN TOOLS, HISTORY) */}
       {activeSection === 'system' && (
         <div className="space-y-3">
+          {/* Mã PIN Admin (Chỉ hiển thị ở mục Hệ thống) */}
+          <section className="p-3 rounded-md bg-white border border-slate-200 space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                {isAdmin ? (
+                  <Unlock aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
+                ) : (
+                  <Lock aria-hidden="true" className="w-4 h-4 text-slate-600 shrink-0" />
+                )}
+                <span className="text-xs font-bold text-slate-900">
+                  {isAdmin ? 'Admin: Đã mở khóa' : 'Mã PIN Admin'}
+                </span>
+              </div>
+
+              {!isAdmin ? (
+                <form
+                  onSubmit={handleVerifyPin}
+                  className="flex items-center gap-1.5"
+                  autoComplete="off"
+                >
+                  <div className="relative flex items-center">
+                    <input
+                      type={showPinText ? 'text' : 'password'}
+                      name="trip_admin_pin_code"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      spellCheck={false}
+                      value={pinInput}
+                      onChange={(e) => setPinInput(e.target.value)}
+                      placeholder="PIN (1234)…"
+                      aria-label="PIN Admin"
+                      className="w-32 sm:w-36 min-h-[34px] pl-2.5 pr-7 rounded-sm border border-slate-300 bg-white text-xs font-mono text-slate-900 focus:border-brand"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPinText((prev) => !prev)}
+                      aria-label={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
+                      title={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
+                      className="absolute right-1.5 p-1 text-slate-500 hover:text-slate-800 transition-colors"
+                    >
+                      {showPinText ? (
+                        <EyeOff aria-hidden="true" className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye aria-hidden="true" className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={verifyingPin || !pinInput.trim()}
+                    className="min-h-[34px] px-3 rounded-sm bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold transition-colors shrink-0"
+                  >
+                    {verifyingPin ? 'Đang mở…' : 'Mở khóa'}
+                  </button>
+                </form>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowChangePin(!showChangePin)}
+                    aria-expanded={showChangePin}
+                    className="min-h-[34px] px-2.5 rounded-sm border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors"
+                  >
+                    <KeyRound aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Đổi PIN</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onLockAdmin}
+                    className="min-h-[34px] px-3 rounded-sm bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 transition-colors"
+                  >
+                    <Lock aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Khóa</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {isAdmin && showChangePin && (
+              <form
+                onSubmit={handleSaveNewPin}
+                className="pt-2 border-t border-slate-100 flex items-center gap-2"
+              >
+                <input
+                  type="password"
+                  name="oldPin"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="PIN cũ"
+                  value={oldPinInput}
+                  onChange={(e) => setOldPinInput(e.target.value)}
+                  placeholder="PIN cũ…"
+                  className="flex-1 min-w-0 min-h-[34px] px-2.5 rounded-sm border border-slate-300 text-xs font-mono"
+                />
+                <input
+                  type="password"
+                  name="newPin"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label="PIN mới"
+                  value={newPinInput}
+                  onChange={(e) => setNewPinInput(e.target.value)}
+                  placeholder="PIN mới…"
+                  className="flex-1 min-w-0 min-h-[34px] px-2.5 rounded-sm border border-slate-300 text-xs font-mono"
+                />
+                <button
+                  type="submit"
+                  className="min-h-[34px] px-3 rounded-sm bg-brand hover:bg-brand-hover text-white text-xs font-bold shrink-0 transition-colors"
+                >
+                  Lưu
+                </button>
+              </form>
+            )}
+          </section>
+
           {/* Kết nối Sheet & Share Link */}
           <section className="p-3 rounded-md bg-white border border-slate-200 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -891,6 +977,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   type="button"
                   disabled={!isAdmin || !gasUrlInput.trim() || testingSheet}
                   onClick={async () => {
+                    if (!isAdmin) return;
                     setTestingSheet(true);
                     try {
                       onSaveGasUrl(gasUrlInput);
@@ -926,7 +1013,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   type="button"
                   aria-expanded={showRawCodeGs}
                   disabled={!isAdmin}
-                  onClick={() => setShowRawCodeGs((prev) => !prev)}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    setShowRawCodeGs((prev) => !prev);
+                  }}
                   className="min-h-[32px] px-2.5 rounded-sm border border-slate-300 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
                 >
                   {showRawCodeGs ? 'Ẩn Code.gs' : 'Xem Code.gs'}
@@ -936,7 +1026,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   type="button"
                   aria-pressed={simulateOffline}
                   disabled={!isAdmin}
-                  onClick={() => onToggleSimulateOffline(!simulateOffline)}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    onToggleSimulateOffline(!simulateOffline);
+                  }}
                   className={`min-h-[32px] px-2.5 rounded-sm text-xs font-semibold flex items-center gap-1 border transition-colors ${
                     simulateOffline
                       ? 'bg-amber-600 text-white border-amber-600'
@@ -950,7 +1043,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 <button
                   type="button"
                   disabled={!isAdmin}
-                  onClick={onTriggerDemoConflict}
+                  onClick={() => {
+                    if (!isAdmin) return;
+                    onTriggerDemoConflict();
+                  }}
                   className="min-h-[32px] px-2.5 rounded-sm border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
                 >
                   Test xung đột
@@ -960,7 +1056,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   <button
                     type="button"
                     disabled={!isAdmin}
-                    onClick={() => setConfirmResetDemo(true)}
+                    onClick={() => {
+                      if (!isAdmin) return;
+                      setConfirmResetDemo(true);
+                    }}
                     className="min-h-[32px] px-2.5 rounded-sm border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1 transition-colors"
                   >
                     <RotateCcw aria-hidden="true" className="w-3.5 h-3.5" />
@@ -971,6 +1070,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        if (!isAdmin) return;
                         setConfirmResetDemo(false);
                         onResetDemoData();
                       }}

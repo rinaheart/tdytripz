@@ -34,6 +34,9 @@ Mọi thay đổi quan trọng của dự án **Chia Tiền Nhóm — Hà Nội 
   - Cung cấp đúng **2 nút Copy nguyên bản** cho mỗi giao dịch cần chuyển:
     1. **STK:** Chỉ copy số tài khoản thuần túy (ví dụ: `0011004567890`).
     2. **Số tiền:** Chỉ copy số nguyên viết liền (ví dụ: `2500000`).
+- **Tập trung Mã PIN Admin về mục Hệ thống & Khóa toàn bộ thao tác quản trị (`src/components/SettingsTab.tsx`, `src/App.tsx`):**
+  - Khung nhập/mở khóa và đổi **Mã PIN Admin** chỉ hiển thị trong mục **Cài đặt → Hệ thống**.
+  - Bắt buộc mở khóa mã PIN Admin trước khi thực hiện bất kỳ thay đổi cấu hình nào: **Thêm/Xóa thành viên**, **Thêm/Đổi STK & thông tin ngân hàng của thành viên**, **Cài đặt chuyến đi & danh mục**, và **Cài đặt hệ thống**. Thành viên bình thường chỉ xem thông tin và bấm Copy STK / Copy link mời / Đồng bộ.
 
 ---
 

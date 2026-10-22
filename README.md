@@ -85,13 +85,14 @@ Khi `DEFAULT_GAS_URL` đã được cấu hình trong `src/config.ts`:
 
 ### Bước 2: Cài đặt hoặc nâng cấp `Code.gs` trên Google Sheets
 1. Mở file Google Sheets của nhóm → chọn **Tiện ích mở rộng (Extensions)** → **Apps Script**.
-2. Trong ứng dụng web, vào tab **Cài đặt** → mở khóa **PIN Admin** (mặc định: `1234`) → mục **Hệ thống** → bấm **Copy Code.gs** (hoặc copy từ file `src/assets/Code.gs`).
+2. Trong ứng dụng web, vào tab **Cài đặt** → mục **Hệ thống** → mở khóa **PIN Admin** (mặc định: `1234`) → bấm **Copy Code.gs** (hoặc copy từ file `src/assets/Code.gs`).
 3. Dán đè toàn bộ nội dung vào file `Code.gs` trên trình soạn thảo Apps Script và bấm **Lưu (Ctrl+S)**.
 4. Bấm **Triển khai (Deploy)** → **Quản lý các bản triển khai (Manage deployments)** → bấm biểu tượng cây bút (Chỉnh sửa) → tại mục **Phiên bản (Version)** chọn **Phiên bản mới (New version)** → bấm **Triển khai (Deploy)**.
    - *Thực thi dưới dạng (Execute as):* **Tôi (Me)**
    - *Ai có quyền truy cập (Who has access):* **Bất kỳ ai (Anyone)**
 
-### Bước 3: Quản lý mã PIN Admin
-- Mã PIN Admin mặc định khi khởi tạo lần đầu là **`1234`** và được lưu trong `ScriptProperties` (`ADMIN_PIN`) của Google Apps Script (không lộ trên các ô Google Sheet).
-- Để đổi mã PIN: Mở tab **Cài đặt** → nhập PIN hiện tại để mở khóa Admin → bấm nút **PIN** trên góc phải → nhập PIN cũ & PIN mới (tối thiểu 4 ký tự) → bấm **Lưu**.
+### Bước 3: Quản lý mã PIN Admin & Phân quyền Cài đặt
+- Mã PIN Admin chỉ hiển thị tại mục **Cài đặt → Hệ thống** (mặc định: **`1234`**, lưu trong `ScriptProperties` của Google Apps Script).
+- Mọi thao tác cấu hình không dành cho thành viên bình thường — bao gồm **thêm/xóa thành viên**, **thêm/sửa STK thành viên**, **cài đặt chuyến đi & danh mục**, và **cài đặt hệ thống** — đều yêu cầu mở khóa mã PIN Admin trước. Thành viên bình thường chỉ xem danh sách, copy STK, copy link mời và bấm đồng bộ.
+- Để đổi mã PIN: Vào **Cài đặt → Hệ thống** → mở khóa PIN hiện tại → bấm **Đổi PIN** → nhập PIN cũ & PIN mới (tối thiểu 4 ký tự) → bấm **Lưu**.
 - **Bảo vệ chống dò mã PIN (Brute-Force Lockout):** Nếu nhập sai PIN quá **5 lần liên tiếp**, hệ thống tự động tạm khóa xác thực PIN trong **5 phút**.
