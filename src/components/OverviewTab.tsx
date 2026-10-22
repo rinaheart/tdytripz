@@ -18,8 +18,10 @@ import type {
   TripConfig,
 } from '../types';
 import {
+  formatDateRangeVN,
   formatDayGroupHeader,
   formatVND,
+  getTripDurationShort,
 } from '../utils/format';
 import { MemberAvatar } from './MemberAvatar';
 import type { ActiveTab } from './Navbar';
@@ -143,33 +145,46 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
     return Array.from(map.values()).sort((a, b) => a.sortKey.localeCompare(b.sortKey));
   }, [activeExpenses, config.startDate, config.endDate]);
 
+  const tripDurationShort = useMemo(
+    () => getTripDurationShort(config.startDate, config.endDate),
+    [config.startDate, config.endDate]
+  );
+
+  const tripPlaceLabel = useMemo(() => {
+    const rawPlace = (config.location || config.tripName || 'Chuyến đi').trim();
+    if (tripDurationShort && !rawPlace.toUpperCase().includes(tripDurationShort)) {
+      return `${rawPlace} · ${tripDurationShort}`;
+    }
+    return rawPlace;
+  }, [config.location, config.tripName, tripDurationShort]);
+
+  const tripDateRange = useMemo(
+    () => formatDateRangeVN(config.startDate, config.endDate),
+    [config.startDate, config.endDate]
+  );
+
   return (
     <div className="space-y-3">
-      {/* 1. Thẻ Tổng chi (Gộp tiêu đề trực tiếp vào trong Card, bỏ dòng đọc chữ dài dòng) */}
+      {/* 1. Hero Card: Địa điểm · Số ngày đêm (Trái) | Thời gian chuyến đi (Phải) + Tổng chi + Bình quân */}
       <section className="p-3.5 sm:p-4 rounded-2xl bg-white border-2 border-brand shadow-sm shadow-brand/5 space-y-2">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand">
-            <Play aria-hidden="true" className="w-3 h-3 fill-current" />
-            <span>TỔNG CHI · {activeExpenses.length} KHOẢN</span>
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand min-w-0">
+            <Play aria-hidden="true" className="w-3 h-3 fill-current shrink-0" />
+            <span className="truncate">{tripPlaceLabel}</span>
           </div>
-          <span
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[10px] font-bold uppercase ${
-              config.tripStatus === 'completed'
-                ? 'bg-slate-100 border-slate-200 text-slate-600'
-                : 'bg-emerald-50 border-emerald-200 text-emerald-700'
-            }`}
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                config.tripStatus === 'completed' ? 'bg-slate-400' : 'bg-emerald-500'
-              }`}
-            />
-            <span>{config.tripStatus === 'completed' ? 'KHÓA' : 'LIVE'}</span>
+
+          <span className="text-[11px] font-mono font-semibold text-slate-500 tabular-nums shrink-0">
+            {tripDateRange}
           </span>
         </div>
 
-        <div className="text-[26px] sm:text-3xl leading-none font-mono font-extrabold tracking-tight text-slate-900 tabular-nums py-0.5">
-          {formatVND(totalTripExpense, true)}
+        <div className="flex items-baseline justify-between gap-2 py-0.5">
+          <div className="text-[26px] sm:text-3xl leading-none font-mono font-extrabold tracking-tight text-slate-900 tabular-nums">
+            {formatVND(totalTripExpense, true)}
+          </div>
+          <span className="text-[11px] font-semibold text-slate-400 shrink-0">
+            Tổng chi
+          </span>
         </div>
 
         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
@@ -180,8 +195,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </strong>
           </div>
 
-          <span className="text-[11px] font-semibold text-slate-400 tabular-nums shrink-0">
-            {activeMemberCount} thành viên
+          <span className="text-[11px] font-semibold text-slate-500 tabular-nums shrink-0">
+            {activeExpenses.length} khoản · {activeMemberCount} người
           </span>
         </div>
       </section>

@@ -3,11 +3,10 @@ import {
   AlertTriangle,
   Archive,
   CheckCircle2,
-  CloudOff,
+  ChevronDown,
   Download,
   Moon,
   RefreshCw,
-  Share2,
   Sun,
   User,
 } from 'lucide-react';
@@ -26,7 +25,6 @@ import {
   changeAdminPin,
   enqueueExpenseUpsert,
   fetchAllFromGas,
-  buildShareableTripUrl,
   getCurrentUserId,
   getGasUrl,
   getSimulateOffline,
@@ -54,7 +52,6 @@ import type {
 import {
   generateUUID,
   getNowGMT7,
-  copyToClipboard,
 } from './utils/format';
 import { calculateBalances } from './utils/math';
 
@@ -459,28 +456,24 @@ export default function App() {
         Chuyển đến nội dung chính
       </a>
 
-      {/* Top Header theo phong cách TdyTime: Trái là User đang chọn, Phải là các nút công cụ */}
-      <header className="sticky top-0 z-30 h-13 md:h-14 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-2xs">
+      {/* Top Header tinh gọn: Trái là User đang chọn, Phải là Đồng bộ + Cài App + Dark Mode */}
+      <header className="sticky top-0 z-30 h-12 sm:h-13 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-2xs">
         <div className="max-w-2xl mx-auto px-3 md:px-6 h-full flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={() => setIsWhoAmIOpen(true)}
             aria-label="Đổi người dùng"
             title={currentMember ? `Đang chọn: ${currentMember.name}` : 'Chọn người dùng'}
-            className="min-h-[40px] px-2.5 py-1 -ml-1.5 rounded-xl hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
+            className="min-h-[38px] px-2 py-1 -ml-1.5 rounded-xl hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer group"
           >
             {currentMember ? (
-              <div className="flex items-center gap-2 min-w-0">
+              <>
                 <MemberAvatar member={currentMember} size="sm" />
-                <div className="min-w-0 text-left">
-                  <div className="text-xs sm:text-sm font-bold text-slate-800 truncate leading-tight">
-                    {currentMember.name}
-                  </div>
-                  <div className="text-[10px] font-medium text-slate-400 truncate leading-tight">
-                    {appState.config.tripName}
-                  </div>
-                </div>
-              </div>
+                <span className="text-xs sm:text-sm font-bold text-slate-800 truncate max-w-[180px]">
+                  {currentMember.name}
+                </span>
+                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0" />
+              </>
             ) : (
               <>
                 <div
@@ -489,55 +482,42 @@ export default function App() {
                 >
                   <User aria-hidden="true" className="w-3.5 h-3.5" />
                 </div>
-                <span className="text-sm font-semibold text-slate-700">Chọn tên</span>
+                <span className="text-xs sm:text-sm font-semibold text-slate-700">Chọn tên</span>
+                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
               </>
             )}
           </button>
 
           <div className="flex items-center gap-1 shrink-0">
-            {!effectiveOnline ? (
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800">
-                <CloudOff aria-hidden="true" className="w-3 h-3 shrink-0" />
-                <span>Offline</span>
-              </span>
-            ) : (
-              gasUrl && (
-                <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>{appState.lastSyncedAt?.slice(11, 16) || 'Đã đồng bộ'}</span>
-                </span>
-              )
-            )}
-
             <button
               type="button"
               onClick={() => handleRefreshSync(false)}
               disabled={isSyncing}
               aria-label="Đồng bộ dữ liệu"
-              title="Đồng bộ dữ liệu"
-              className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
+              title={
+                !effectiveOnline
+                  ? 'Đang Offline'
+                  : gasUrl
+                  ? `Đồng bộ Sheet (${appState.lastSyncedAt?.slice(11, 16) || 'Sẵn sàng'})`
+                  : 'Làm mới dữ liệu'
+              }
+              className="relative w-9 h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
             >
               <RefreshCw
                 aria-hidden="true"
-                className={`w-[18px] h-[18px] ${isSyncing ? 'animate-spin text-brand' : ''}`}
+                className={`w-[17px] h-[17px] ${isSyncing ? 'animate-spin text-brand' : ''}`}
+              />
+              <span
+                aria-hidden="true"
+                className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${
+                  !effectiveOnline
+                    ? 'bg-amber-500'
+                    : gasUrl
+                    ? 'bg-emerald-500'
+                    : 'bg-slate-300'
+                }`}
               />
             </button>
-
-            {gasUrl && (
-              <button
-                type="button"
-                onClick={async () => {
-                  const shareUrl = buildShareableTripUrl(gasUrl);
-                  const ok = await copyToClipboard(shareUrl);
-                  if (ok) showToast('Đã copy Link mời nhóm (kèm kết nối Sheet)!');
-                }}
-                aria-label="Chia sẻ link nhóm"
-                title="Copy link mời nhóm (tự động kết nối Google Sheet)"
-                className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
-              >
-                <Share2 aria-hidden="true" className="w-[18px] h-[18px]" />
-              </button>
-            )}
 
             {!isInstalled && (
               <button
