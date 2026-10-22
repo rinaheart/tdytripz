@@ -7,6 +7,7 @@ import {
   Clock,
   Lock,
   Package,
+  Play,
   Plus,
   Search,
   Trash2,
@@ -131,9 +132,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   };
 
   return (
-    <div className="space-y-3.5">
-      {/* Thanh tìm kiếm & bộ lọc tinh gọn */}
-      <section className="p-3 rounded-md bg-white border border-slate-200 space-y-2">
+    <div className="space-y-4">
+      {/* Thanh tìm kiếm & bộ lọc tinh gọn theo phong cách TdyTime */}
+      <section className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
         <div className="relative flex items-center">
           <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
           <input
@@ -144,14 +145,14 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Tìm khoản chi, ghi chú…"
             aria-label="Tìm khoản chi"
-            className="w-full min-h-[38px] pl-9 pr-8 py-1.5 rounded-sm bg-slate-50 border border-slate-200/80 focus:border-brand focus:bg-white text-xs font-medium text-slate-900 transition-colors"
+            className="w-full min-h-[38px] pl-9 pr-8 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 focus:border-brand focus:bg-white text-xs font-medium text-slate-900 transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => setSearchQuery('')}
               aria-label="Xóa từ khóa"
-              className="absolute right-2 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-sm text-slate-400 hover:text-slate-600 transition-colors"
+              className="absolute right-2 min-w-[28px] min-h-[28px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-colors"
             >
               <X aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
@@ -165,9 +166,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
               value={categoryFilter}
               onChange={(e) => setCategoryFilter(e.target.value)}
               aria-label="Lọc danh mục"
-              className={`w-full min-h-[36px] pl-2.5 pr-7 py-1 rounded-sm border text-xs font-semibold appearance-none transition-colors ${
+              className={`w-full min-h-[36px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
                 categoryFilter !== 'all'
-                  ? 'border-brand bg-brand-soft/50 text-brand'
+                  ? 'border-brand bg-brand-soft/60 text-brand'
                   : 'border-slate-200 bg-white text-slate-700'
               }`}
             >
@@ -188,9 +189,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
               value={memberFilter}
               onChange={(e) => setMemberFilter(e.target.value)}
               aria-label="Lọc theo người trả"
-              className={`w-full min-h-[36px] pl-2.5 pr-7 py-1 rounded-sm border text-xs font-semibold appearance-none transition-colors ${
+              className={`w-full min-h-[36px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
                 memberFilter !== 'all'
-                  ? 'border-brand bg-brand-soft/50 text-brand'
+                  ? 'border-brand bg-brand-soft/60 text-brand'
                   : 'border-slate-200 bg-white text-slate-700'
               }`}
             >
@@ -208,7 +209,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
         </div>
 
         {(hasActiveFilter || deletedCount > 0 || showDeleted) && (
-          <div className="pt-0.5 flex items-center justify-between text-[11px] text-slate-600">
+          <div className="pt-0.5 flex items-center justify-between text-[11px] text-slate-500">
             <div className="flex items-center gap-2">
               <span>{filteredExpenses.length} khoản</span>
               {hasActiveFilter && (
@@ -228,7 +229,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                 aria-pressed={showDeleted}
                 onClick={() => setShowDeleted((prev) => !prev)}
                 className={`inline-flex items-center gap-1 font-medium transition-colors ${
-                  showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-600 hover:text-slate-900'
+                  showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-500 hover:text-slate-900'
                 }`}
               >
                 <Trash2 aria-hidden="true" className="w-3 h-3" />
@@ -241,7 +242,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
 
       {/* Danh sách giao dịch theo ngày */}
       {groupedDays.length === 0 ? (
-        <div className="p-8 rounded-md bg-white border border-slate-200 text-center space-y-2.5">
+        <div className="p-8 rounded-2xl bg-white border border-slate-200/90 shadow-2xs text-center space-y-2.5">
           <div className="text-sm font-bold text-slate-800">
             {hasActiveFilter ? 'Không tìm thấy giao dịch phù hợp' : 'Chưa có giao dịch nào'}
           </div>
@@ -249,7 +250,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
             <button
               type="button"
               onClick={resetFilters}
-              className="min-h-[36px] px-4 py-1.5 rounded-sm bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+              className="min-h-[36px] px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
             >
               <span>Xóa bộ lọc</span>
             </button>
@@ -258,7 +259,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
               <button
                 type="button"
                 onClick={onOpenAddModal}
-                className="min-h-[40px] px-4 py-2 rounded-sm bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold inline-flex items-center gap-1.5 transition-colors"
               >
                 <Plus aria-hidden="true" className="w-4 h-4" />
                 <span>Thêm giao dịch</span>
@@ -267,19 +268,31 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
           )}
         </div>
       ) : (
-        <div className="space-y-3.5">
-          {groupedDays.map((group) => (
-            <section key={group.groupKey} className="space-y-1.5">
+        <div className="space-y-4">
+          {groupedDays.map((group, grpIdx) => (
+            <section key={group.groupKey} className="space-y-2">
               <div className="px-1 flex items-center justify-between text-xs">
-                <h3 className="font-bold text-slate-700">{group.headerTitle}</h3>
+                <div
+                  className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${
+                    grpIdx === 0 ? 'text-brand' : 'text-slate-600'
+                  }`}
+                >
+                  <Play
+                    aria-hidden="true"
+                    className={`w-3 h-3 fill-current ${
+                      grpIdx === 0 ? 'text-brand' : 'text-slate-400'
+                    }`}
+                  />
+                  <h3>{group.headerTitle}</h3>
+                </div>
                 {group.totalExpense > 0 && (
-                  <span className="font-mono font-bold text-slate-700 tabular-nums">
+                  <span className="font-mono text-xs font-bold text-slate-600 tabular-nums">
                     {formatVND(group.totalExpense)}
                   </span>
                 )}
               </div>
 
-              <div className="divide-y divide-slate-100 rounded-md bg-white border border-slate-200 overflow-hidden">
+              <div className="divide-y divide-slate-100 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-hidden">
                 {group.items.map((exp) => {
                   const isTransfer = exp.type === 'transfer';
                   const payerMember = getMember(exp.payer);

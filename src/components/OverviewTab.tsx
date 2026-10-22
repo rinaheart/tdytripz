@@ -2,10 +2,12 @@ import React, { useMemo } from 'react';
 import {
   ArrowRight,
   Car,
+  ChevronRight,
   Hotel,
   MapPin,
   Package,
   Plane,
+  Play,
   Ticket,
   Utensils,
 } from 'lucide-react';
@@ -144,239 +146,267 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
   }, [activeExpenses, config.startDate, config.endDate]);
 
   return (
-    <div className="space-y-4">
-      {/* 1. Thẻ Tổng chi (Hero Card) - Điểm nhấn màu chủ đạo duy nhất, không dùng khung lồng khung */}
-      <section className="p-4 sm:p-5 rounded-md bg-brand text-white">
-        <div className="flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-wider text-blue-100">
-          <span>TỔNG CHI · {activeExpenses.length} KHOẢN</span>
+    <div className="space-y-5">
+      {/* 1. Thẻ Tổng chi (Active Hero Card theo phong cách TdyTime: viền xanh nổi bật + LIVE badge) */}
+      <div className="space-y-2">
+        <div className="px-1 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand">
+            <Play aria-hidden="true" className="w-3 h-3 fill-current" />
+            <span>TỔNG CHI CHUYẾN ĐI · {activeExpenses.length} KHOẢN</span>
+          </div>
           {config.location && (
-            <span className="inline-flex items-center gap-1 font-normal normal-case tracking-normal text-blue-100 truncate">
-              <MapPin aria-hidden="true" className="w-3 h-3 shrink-0 text-blue-200" />
+            <span className="inline-flex items-center gap-1 text-xs text-slate-400 font-medium truncate">
+              <MapPin aria-hidden="true" className="w-3 h-3 shrink-0" />
               <span className="truncate">{config.location}</span>
             </span>
           )}
         </div>
 
-        <div className="mt-1 text-[30px] sm:text-[34px] leading-tight font-mono font-extrabold tracking-tight text-white tabular-nums">
-          {formatVND(totalTripExpense, true)}
-        </div>
-
-        <div className="mt-1 text-[11px] sm:text-xs text-blue-100 leading-snug">
-          {readVietnameseNumber(totalTripExpense)}
-        </div>
-
-        {/* Hàng thông số phụ: Bình quân/người (trái) & Thành viên (canh phải) */}
-        <div className="mt-4 pt-3.5 border-t border-white/25 grid grid-cols-2 gap-4 items-center">
-          <div className="min-w-0">
-            <div className="text-[11px] text-blue-100">Bình quân/người</div>
-            <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-white tabular-nums truncate">
-              ~{formatVND(averagePerPerson, false)}
-            </div>
-          </div>
-
-          <div className="min-w-0 border-l border-white/25 pl-4 text-right">
-            <div className="text-[11px] text-blue-100">Thành viên</div>
-            <div className="mt-0.5 text-sm sm:text-base font-mono font-bold text-white tabular-nums">
-              {String(activeMemberCount).padStart(2, '0')}{' '}
-              <span className="text-xs font-normal text-blue-100">người</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. Số liệu của bạn - Tinh gọn, đưa Số dư ròng nằm ngang cân đối */}
-      {currentMember && myBalance && (
-        <section className="p-3.5 sm:p-4 rounded-md bg-white border border-slate-200">
+        <section className="p-4 sm:p-5 rounded-2xl bg-white border-2 border-brand shadow-md shadow-brand/5 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <MemberAvatar member={currentMember} size="xs" />
-              <h2 className="text-sm font-bold text-slate-900 truncate text-balance">
-                Số liệu của bạn
-              </h2>
-              <span className="text-xs text-slate-600 font-medium truncate">
-                · {currentMember.name}
+            <span className="text-xs font-bold text-brand tracking-tight">
+              Tổng cộng toàn nhóm
+            </span>
+            <span
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase ${
+                config.tripStatus === 'completed'
+                  ? 'bg-slate-100 border-slate-200 text-slate-600'
+                  : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  config.tripStatus === 'completed' ? 'bg-slate-400' : 'bg-emerald-500'
+                }`}
+              />
+              <span>{config.tripStatus === 'completed' ? 'ĐÃ KHÓA' : 'LIVE'}</span>
+            </span>
+          </div>
+
+          <div>
+            <div className="text-[28px] sm:text-[32px] leading-tight font-mono font-extrabold tracking-tight text-slate-900 tabular-nums">
+              {formatVND(totalTripExpense, true)}
+            </div>
+            <div className="mt-0.5 text-xs text-slate-500 leading-snug">
+              {readVietnameseNumber(totalTripExpense)}
+            </div>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
+            <div className="text-slate-600 font-medium truncate">
+              <span className="font-bold text-slate-700">Bình quân</span>
+              <span className="mx-1.5 text-slate-300">•</span>
+              <span className="font-mono font-semibold text-slate-700 tabular-nums">
+                ~{formatVND(averagePerPerson, false)}/người
               </span>
             </div>
 
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-brand-soft border border-brand-border/60 text-brand text-[11px] font-bold tabular-nums shrink-0">
+              {String(activeMemberCount).padStart(2, '0')} người
+            </span>
+          </div>
+        </section>
+      </div>
+
+      {/* 2. Số liệu của bạn (Card TdyTime thứ cấp) */}
+      {currentMember && myBalance && (
+        <div className="space-y-2">
+          <div className="px-1 flex items-center justify-between">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+              <Play aria-hidden="true" className="w-3 h-3 fill-current text-slate-400" />
+              <span>SỐ LIỆU CỦA BẠN ({currentMember.name})</span>
+            </div>
             <button
               type="button"
               onClick={() => onNavigateTab('settlement')}
-              className="py-1 px-2 -mr-1.5 rounded-sm text-xs font-semibold text-brand hover:bg-brand-soft flex items-center gap-1 transition-colors shrink-0"
+              className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-0.5 cursor-pointer"
             >
-              <span>Chi tiết</span>
-              <ArrowRight aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+              <span>Quyết toán</span>
+              <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
             </button>
           </div>
 
-          {/* Tâm điểm: Số dư ròng tinh gọn trên 1 hàng */}
-          <div className="mt-2.5 flex items-baseline justify-between gap-2">
-            <div className="text-xs text-slate-600 min-w-0 truncate">
-              <span>Số dư ròng</span>
+          <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <MemberAvatar member={currentMember} size="sm" />
+                <span className="text-xs font-bold text-slate-700 truncate">
+                  Số dư ròng hiện tại
+                </span>
+              </div>
+
               <span
-                className={`ml-1 font-semibold ${
+                className={`inline-flex items-center px-2.5 py-0.5 rounded-full border text-[10px] font-bold uppercase ${
                   myBalance.balance > 0
-                    ? 'text-emerald-800'
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
                     : myBalance.balance < 0
-                    ? 'text-rose-700'
-                    : 'text-slate-600'
+                    ? 'bg-rose-50 border-rose-200 text-rose-700'
+                    : 'bg-slate-100 border-slate-200 text-slate-600'
                 }`}
               >
-                ·{' '}
                 {myBalance.balance > 0
-                  ? 'Cần nhận'
+                  ? 'CẦN NHẬN'
                   : myBalance.balance < 0
-                  ? 'Cần trả'
-                  : 'Cân bằng'}
+                  ? 'CẦN TRẢ'
+                  : 'CÂN BẰNG'}
               </span>
             </div>
 
             <div
-              className={`text-xl sm:text-2xl leading-none font-mono font-extrabold tabular-nums shrink-0 ${
+              className={`text-2xl sm:text-[26px] leading-none font-mono font-extrabold tabular-nums ${
                 myBalance.balance > 0
-                  ? 'text-emerald-800'
+                  ? 'text-emerald-700'
                   : myBalance.balance < 0
-                  ? 'text-rose-700'
+                  ? 'text-rose-600'
                   : 'text-slate-800'
               }`}
             >
               {myBalance.balance > 0 ? '+' : ''}
               {formatVND(myBalance.balance, true)}
             </div>
-          </div>
 
-          {/* Hàng phụ: Đã chi (trái) & Phải chịu (canh phải) */}
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-4 items-center">
-            <div className="min-w-0">
-              <div className="text-[11px] text-slate-600">Đã chi</div>
-              <div className="mt-0.5 text-sm font-mono font-bold text-slate-900 tabular-nums">
-                {formatVND(myBalance.paidExpense, false)}
+            <div className="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4 items-center text-xs">
+              <div className="min-w-0">
+                <span className="text-slate-500">Đã chi: </span>
+                <strong className="font-mono font-bold text-slate-800 tabular-nums">
+                  {formatVND(myBalance.paidExpense, false)}
+                </strong>
+              </div>
+              <div className="min-w-0 text-right">
+                <span className="text-slate-500">Phải chịu: </span>
+                <strong className="font-mono font-bold text-slate-800 tabular-nums">
+                  {formatVND(myBalance.owedExpense, false)}
+                </strong>
               </div>
             </div>
-            <div className="min-w-0 border-l border-slate-100 pl-4 text-right">
-              <div className="text-[11px] text-slate-600">Phải chịu</div>
-              <div className="mt-0.5 text-sm font-mono font-bold text-slate-900 tabular-nums">
-                {formatVND(myBalance.owedExpense, false)}
-              </div>
-            </div>
-          </div>
 
-          {myBalance.netTransfer !== 0 && (
-            <div className="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-              <span className="text-slate-600">
-                {myBalance.netTransfer > 0 ? 'Đã chuyển trả trước' : 'Đã nhận trả trước'}
-              </span>
-              <span className="font-mono font-bold text-amber-800 tabular-nums">
-                {myBalance.netTransfer > 0 ? '+' : ''}
-                {formatVND(myBalance.netTransfer, false)}
-              </span>
-            </div>
-          )}
-        </section>
+            {myBalance.netTransfer !== 0 && (
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                <span className="text-slate-500">
+                  {myBalance.netTransfer > 0 ? 'Đã chuyển trả trước' : 'Đã nhận trả trước'}
+                </span>
+                <span className="font-mono font-bold text-amber-700 tabular-nums">
+                  {myBalance.netTransfer > 0 ? '+' : ''}
+                  {formatVND(myBalance.netTransfer, false)}
+                </span>
+              </div>
+            )}
+          </section>
+        </div>
       )}
 
-      {/* 3. Theo danh mục & Theo ngày - Tối giản chữ tối đa */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Theo danh mục */}
-        <section className="p-4 rounded-md bg-white border border-slate-200">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <h2 className="text-[15px] font-bold text-slate-900 text-balance">Theo danh mục</h2>
-            <button
-              type="button"
-              onClick={() => onNavigateTab('expenses')}
-              className="py-1 px-2 -mr-1.5 rounded-sm text-xs font-semibold text-brand hover:bg-brand-soft flex items-center gap-1 transition-colors shrink-0"
-            >
-              <span>Tất cả</span>
-              <ArrowRight aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-            </button>
+      {/* 3. Bento Grid: Theo danh mục & Theo ngày */}
+      <div className="space-y-2">
+        <div className="px-1 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
+            <Play aria-hidden="true" className="w-3 h-3 fill-current text-slate-400" />
+            <span>THỐNG KÊ CHI TIÊU</span>
           </div>
+          <button
+            type="button"
+            onClick={() => onNavigateTab('expenses')}
+            className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-0.5 cursor-pointer"
+          >
+            <span>Tất cả khoản chi</span>
+            <ArrowRight aria-hidden="true" className="w-3.5 h-3.5" />
+          </button>
+        </div>
 
-          {categoryStats.length === 0 ? (
-            <div className="py-5 text-center text-xs text-slate-600">Chưa có dữ liệu</div>
-          ) : (
-            <div className="space-y-3">
-              {categoryStats.map(({ category, total }) => {
-                const pct =
-                  totalTripExpense > 0
-                    ? Math.round((total / totalTripExpense) * 100)
-                    : 0;
-                const IconComp = CATEGORY_ICON_MAP[category.icon] || Package;
-                return (
-                  <div key={category.id} className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 text-[13px]">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span aria-hidden="true" className="shrink-0">
-                          <IconComp className="w-3.5 h-3.5 text-brand" />
-                        </span>
-                        <span className="font-medium text-slate-900 truncate">
-                          {category.name}
-                        </span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+          {/* Theo danh mục */}
+          <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Theo danh mục
+            </h2>
+
+            {categoryStats.length === 0 ? (
+              <div className="py-5 text-center text-xs text-slate-500">Chưa có dữ liệu</div>
+            ) : (
+              <div className="space-y-3">
+                {categoryStats.map(({ category, total }) => {
+                  const pct =
+                    totalTripExpense > 0
+                      ? Math.round((total / totalTripExpense) * 100)
+                      : 0;
+                  const IconComp = CATEGORY_ICON_MAP[category.icon] || Package;
+                  return (
+                    <div key={category.id} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span aria-hidden="true" className="shrink-0">
+                            <IconComp className="w-3.5 h-3.5 text-brand" />
+                          </span>
+                          <span className="font-semibold text-slate-800 truncate">
+                            {category.name}
+                          </span>
+                        </div>
+                        <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            {pct}%
+                          </span>
+                          <span className="font-bold text-slate-800 text-right">
+                            {formatVND(total, false)}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
-                        <span className="text-[11px] text-slate-600 font-medium">
-                          {pct}%
-                        </span>
-                        <span className="font-bold text-slate-900 text-right">
-                          {formatVND(total, false)}
-                        </span>
-                      </div>
-                    </div>
 
-                    <div className="w-full h-1.5 rounded-sm bg-slate-200 overflow-hidden">
-                      <div
-                        className="h-full rounded-sm bg-brand transition-[width]"
-                        style={{ width: `${Math.max(3, Math.min(100, pct))}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Theo ngày */}
-        <section className="p-4 rounded-md bg-white border border-slate-200">
-          <div className="flex items-center justify-between gap-2 mb-3">
-            <h2 className="text-[15px] font-bold text-slate-900 text-balance">Theo ngày</h2>
-          </div>
-
-          {dailyStats.length === 0 ? (
-            <div className="py-5 text-center text-xs text-slate-600">Chưa có dữ liệu</div>
-          ) : (
-            <div className="space-y-3">
-              {dailyStats.map((day) => {
-                const pct =
-                  totalTripExpense > 0
-                    ? Math.round((day.total / totalTripExpense) * 100)
-                    : 0;
-                return (
-                  <div key={day.key} className="space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 text-[13px]">
-                      <span className="font-medium text-slate-900 truncate min-w-0">
-                        {day.label}
-                      </span>
-                      <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
-                        <span className="text-[11px] text-slate-600 font-medium">
-                          {pct}%
-                        </span>
-                        <span className="font-bold text-slate-900 text-right">
-                          {formatVND(day.total, false)}
-                        </span>
+                      <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-brand transition-[width]"
+                          style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
+                        />
                       </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </section>
 
-                    <div className="w-full h-1.5 rounded-sm bg-slate-200 overflow-hidden">
-                      <div
-                        className="h-full rounded-sm bg-brand transition-[width]"
-                        style={{ width: `${Math.max(3, Math.min(100, pct))}%` }}
-                      />
+          {/* Theo ngày */}
+          <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+              Theo ngày
+            </h2>
+
+            {dailyStats.length === 0 ? (
+              <div className="py-5 text-center text-xs text-slate-500">Chưa có dữ liệu</div>
+            ) : (
+              <div className="space-y-3">
+                {dailyStats.map((day) => {
+                  const pct =
+                    totalTripExpense > 0
+                      ? Math.round((day.total / totalTripExpense) * 100)
+                      : 0;
+                  return (
+                    <div key={day.key} className="space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-slate-800 truncate min-w-0">
+                          {day.label}
+                        </span>
+                        <div className="flex items-baseline gap-2 shrink-0 font-mono tabular-nums">
+                          <span className="text-[11px] text-slate-400 font-medium">
+                            {pct}%
+                          </span>
+                          <span className="font-bold text-slate-800 text-right">
+                            {formatVND(day.total, false)}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-brand transition-[width]"
+                          style={{ width: `${Math.max(4, Math.min(100, pct))}%` }}
+                        />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </div>
   );

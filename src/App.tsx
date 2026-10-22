@@ -5,8 +5,10 @@ import {
   CheckCircle2,
   Cloud,
   CloudOff,
+  Moon,
   RefreshCw,
   Share2,
+  Sun,
   User,
 } from 'lucide-react';
 import { ConflictModal } from './components/ConflictModal';
@@ -97,6 +99,26 @@ export default function App() {
 
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminPin, setAdminPin] = useState<string>('');
+
+  const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const saved = window.localStorage.getItem('tdytime_theme');
+    if (saved === 'dark') return true;
+    if (saved === 'light') return false;
+    return false;
+  });
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const root = document.documentElement;
+    if (isDarkMode) {
+      root.classList.add('dark');
+      window.localStorage.setItem('tdytime_theme', 'dark');
+    } else {
+      root.classList.remove('dark');
+      window.localStorage.setItem('tdytime_theme', 'light');
+    }
+  }, [isDarkMode]);
 
   const [gasUrl, setGasUrlState] = useState<string>(() => getGasUrl());
   const [isOnline, setIsOnline] = useState<boolean>(() =>
@@ -432,63 +454,73 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 pb-24">
+    <div className="min-h-dvh bg-slate-50/80 text-slate-900 pb-26">
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-sm focus:bg-brand focus:text-white focus:text-xs focus:font-bold"
+        className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-xl focus:bg-brand focus:text-white focus:text-xs focus:font-bold"
       >
         Chuyển đến nội dung chính
       </a>
 
-      <header className="sticky top-0 z-30 bg-white/95 backdrop-blur-md border-b border-slate-200">
-        <div className="max-w-3xl mx-auto px-4 h-13 flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1.5 min-w-0">
-              <h1 className="text-sm sm:text-base font-extrabold text-slate-900 truncate text-balance">
-                {appState.config.tripName}
-                {headerDurationShort &&
-                !appState.config.tripName.toUpperCase().includes(headerDurationShort)
-                  ? ` ${headerDurationShort}`
-                  : ''}
-              </h1>
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-600 truncate">
-              <span>
-                {formatDateRangeVN(appState.config.startDate, appState.config.endDate)}
-              </span>
-              {!effectiveOnline && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="inline-flex items-center gap-0.5 text-amber-800 font-semibold">
-                    <CloudOff aria-hidden="true" className="w-3 h-3 shrink-0" />
-                    Offline
-                  </span>
-                </>
-              )}
-              {effectiveOnline && gasUrl && (
-                <>
-                  <span aria-hidden="true">·</span>
-                  <span className="inline-flex items-center gap-0.5 text-brand font-medium">
-                    <Cloud aria-hidden="true" className="w-3 h-3 shrink-0" />
-                    {appState.lastSyncedAt?.slice(11, 16) || 'Đã lưu'}
-                  </span>
-                </>
-              )}
-            </div>
-          </div>
+      {/* Top Header theo phong cách TdyTime: Trái là User đang chọn, Phải là các nút công cụ */}
+      <header className="sticky top-0 z-30 h-13 md:h-14 bg-white/95 backdrop-blur-md border-b border-slate-100 shadow-2xs">
+        <div className="max-w-2xl mx-auto px-3 md:px-6 h-full flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setIsWhoAmIOpen(true)}
+            aria-label="Đổi người dùng"
+            title={currentMember ? `Đang chọn: ${currentMember.name}` : 'Chọn người dùng'}
+            className="min-h-[40px] px-2.5 py-1 -ml-1.5 rounded-xl hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
+          >
+            {currentMember ? (
+              <>
+                <MemberAvatar member={currentMember} size="sm" />
+                <span className="text-sm font-semibold text-slate-800 truncate max-w-[160px] sm:max-w-none">
+                  {currentMember.name}
+                </span>
+              </>
+            ) : (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="w-6 h-6 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-700"
+                >
+                  <User aria-hidden="true" className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-sm font-semibold text-slate-700">Chọn tên</span>
+              </>
+            )}
+            <span className="hidden sm:inline text-xs text-slate-400 font-normal">
+              • {appState.config.tripName}
+            </span>
+          </button>
 
           <div className="flex items-center gap-1 shrink-0">
+            {!effectiveOnline ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-50 border border-amber-200 text-[11px] font-bold text-amber-800">
+                <CloudOff aria-hidden="true" className="w-3 h-3 shrink-0" />
+                <span>Offline</span>
+              </span>
+            ) : (
+              gasUrl && (
+                <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-[11px] font-semibold text-emerald-700">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  <span>{appState.lastSyncedAt?.slice(11, 16) || 'Đã đồng bộ'}</span>
+                </span>
+              )
+            )}
+
             <button
               type="button"
               onClick={() => handleRefreshSync(false)}
               disabled={isSyncing}
               aria-label="Đồng bộ dữ liệu"
               title="Đồng bộ dữ liệu"
-              className="w-9 h-9 rounded-sm hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-slate-900 transition-colors"
+              className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
             >
               <RefreshCw
                 aria-hidden="true"
-                className={`w-4 h-4 ${isSyncing ? 'animate-spin text-brand' : ''}`}
+                className={`w-[18px] h-[18px] ${isSyncing ? 'animate-spin text-brand' : ''}`}
               />
             </button>
 
@@ -502,45 +534,49 @@ export default function App() {
                 }}
                 aria-label="Chia sẻ link nhóm"
                 title="Copy link mời nhóm (tự động kết nối Google Sheet)"
-                className="w-9 h-9 rounded-sm hover:bg-slate-100 flex items-center justify-center text-slate-600 hover:text-brand transition-colors"
+                className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
               >
-                <Share2 aria-hidden="true" className="w-4 h-4" />
+                <Share2 aria-hidden="true" className="w-[18px] h-[18px]" />
               </button>
             )}
 
             <button
               type="button"
-              onClick={() => setIsWhoAmIOpen(true)}
-              aria-label="Đổi người dùng"
-              title={currentMember ? `Đang chọn: ${currentMember.name}` : 'Chọn người dùng'}
-              className="min-h-[38px] pl-2 pr-1 py-1 rounded-sm hover:bg-slate-100 flex items-center gap-1.5 transition-colors"
+              onClick={() => setIsDarkMode((prev) => !prev)}
+              aria-label={isDarkMode ? 'Chuyển sang chế độ Sáng' : 'Chuyển sang chế độ Tối'}
+              title={isDarkMode ? 'Chế độ Sáng (Light Mode)' : 'Chế độ Tối (Dark Mode)'}
+              className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
             >
-              {currentMember ? (
-                <>
-                  <span className="text-xs font-bold text-slate-900 max-w-[96px] truncate">
-                    {currentMember.name}
-                  </span>
-                  <MemberAvatar member={currentMember} size="md" />
-                </>
+              {isDarkMode ? (
+                <Sun aria-hidden="true" className="w-[18px] h-[18px] text-amber-400" />
               ) : (
-                <>
-                  <span className="text-xs font-semibold text-slate-700">Chọn tên</span>
-                  <div
-                    aria-hidden="true"
-                    className="w-7 h-7 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-700"
-                  >
-                    <User aria-hidden="true" className="w-3.5 h-3.5" />
-                  </div>
-                </>
+                <Moon aria-hidden="true" className="w-[18px] h-[18px]" />
               )}
             </button>
           </div>
         </div>
       </header>
 
-      <main id="main-content" className="max-w-3xl mx-auto px-4 pt-4 space-y-4">
+      <main id="main-content" className="max-w-2xl mx-auto px-3.5 md:px-6 pt-4 space-y-5">
+        {/* Khối Tiêu đề lớn & Lời chào ngữ cảnh theo đúng layout TdyTime */}
+        <div className="pt-1 pb-1 flex items-start justify-between gap-3 select-none">
+          <div className="flex flex-col gap-0.5 min-w-0">
+            <h1 className="text-[21px] sm:text-2xl font-bold text-slate-800 tracking-tight truncate">
+              {appState.config.tripName}
+              {headerDurationShort &&
+              !appState.config.tripName.toUpperCase().includes(headerDurationShort)
+                ? ` · ${headerDurationShort}`
+                : ''}
+            </h1>
+            <p className="text-xs sm:text-sm font-medium text-slate-500 tracking-tight truncate">
+              {formatDateRangeVN(appState.config.startDate, appState.config.endDate)}
+              {currentMember ? ` • Chào ${currentMember.name}!` : ''}
+            </p>
+          </div>
+        </div>
+
         {appState.config.tripStatus === 'completed' && (
-          <div className="p-3 rounded-md bg-slate-900 text-white flex items-center gap-2 text-xs">
+          <div className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center gap-2.5 text-xs shadow-sm">
             <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
             <span>
               <strong>Chuyến đi đã kết thúc</strong> — Chế độ chỉ xem.
@@ -549,7 +585,7 @@ export default function App() {
         )}
 
         {syncQueue.length > 0 && (
-          <div className="p-3 rounded-md bg-amber-50 border border-amber-300 flex flex-wrap items-center justify-between gap-2">
+          <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-2 shadow-2xs">
             <div className="flex items-center gap-2 text-xs font-bold text-amber-950">
               <AlertTriangle aria-hidden="true" className="w-4 h-4 text-amber-600 shrink-0" />
               <span>{syncQueue.length} khoản chờ đồng bộ</span>
@@ -563,7 +599,7 @@ export default function App() {
                     const c = syncQueue.find((q) => q.status === 'conflict' && q.serverRecord)!;
                     setActiveConflict({ item: c, serverRecord: c.serverRecord! });
                   }}
-                  className="min-h-[34px] px-2.5 py-1 rounded-sm bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors"
+                  className="min-h-[34px] px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors"
                 >
                   Xử lý xung đột
                 </button>
@@ -578,7 +614,7 @@ export default function App() {
                   setTimeout(() => triggerQueueSync(), 50);
                 }}
                 disabled={isSyncing}
-                className="min-h-[34px] px-3 py-1 rounded-sm bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition-colors"
+                className="min-h-[34px] px-3.5 py-1 rounded-xl bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold transition-colors"
               >
                 {isSyncing ? 'Đang gửi…' : 'Đồng bộ ngay'}
               </button>
@@ -767,7 +803,7 @@ export default function App() {
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-22 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] px-4 py-2.5 rounded-md bg-slate-900 text-white text-xs font-semibold shadow-lg flex items-center gap-2"
+          className="fixed bottom-22 left-1/2 -translate-x-1/2 z-50 max-w-sm w-[92%] px-4 py-3 rounded-2xl bg-slate-900 text-white text-xs font-medium shadow-2xl flex items-center gap-2.5"
         >
           <CheckCircle2 aria-hidden="true" className="w-4 h-4 text-emerald-400 shrink-0" />
           <span className="truncate">{toastMessage}</span>
