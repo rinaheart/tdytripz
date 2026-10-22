@@ -3,8 +3,8 @@ import {
   AlertTriangle,
   Archive,
   CheckCircle2,
-  Cloud,
   CloudOff,
+  Download,
   Moon,
   RefreshCw,
   Share2,
@@ -17,9 +17,11 @@ import { ExpensesTab } from './components/ExpensesTab';
 import { MemberAvatar } from './components/MemberAvatar';
 import { type ActiveTab, Navbar } from './components/Navbar';
 import { OverviewTab } from './components/OverviewTab';
+import { PWAInstallModal } from './components/PWAInstallModal';
 import { SettingsTab } from './components/SettingsTab';
 import { SettlementTab } from './components/SettlementTab';
 import { WhoAmIModal } from './components/WhoAmIModal';
+import { usePWAInstall } from './hooks/usePWAInstall';
 import {
   changeAdminPin,
   enqueueExpenseUpsert,
@@ -50,10 +52,8 @@ import type {
   TripConfig,
 } from './types';
 import {
-  formatDateRangeVN,
   generateUUID,
   getNowGMT7,
-  getTripDurationShort,
   copyToClipboard,
 } from './utils/format';
 import { calculateBalances } from './utils/math';
@@ -96,6 +96,8 @@ export default function App() {
   const [isWhoAmIOpen, setIsWhoAmIOpen] = useState<boolean>(() => !currentUserId);
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
   const [editingRecord, setEditingRecord] = useState<ExpenseRecord | null>(null);
+  const [isPWAInstallOpen, setIsPWAInstallOpen] = useState<boolean>(false);
+  const { isInstallable, isInstalled, isIOS, install: installPWA } = usePWAInstall();
 
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminPin, setAdminPin] = useState<string>('');
@@ -448,13 +450,8 @@ export default function App() {
     setActiveConflict({ item: conflictItem, serverRecord: simulatedServerRecord });
   };
 
-  const headerDurationShort = useMemo(
-    () => getTripDurationShort(appState.config.startDate, appState.config.endDate),
-    [appState.config.startDate, appState.config.endDate]
-  );
-
   return (
-    <div className="min-h-dvh bg-slate-50/80 text-slate-900 pb-26">
+    <div className="min-h-dvh bg-slate-50/80 text-slate-900 pb-24">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-50 focus:px-3 focus:py-1.5 focus:rounded-xl focus:bg-brand focus:text-white focus:text-xs focus:font-bold"
@@ -473,12 +470,17 @@ export default function App() {
             className="min-h-[40px] px-2.5 py-1 -ml-1.5 rounded-xl hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer"
           >
             {currentMember ? (
-              <>
+              <div className="flex items-center gap-2 min-w-0">
                 <MemberAvatar member={currentMember} size="sm" />
-                <span className="text-sm font-semibold text-slate-800 truncate max-w-[160px] sm:max-w-none">
-                  {currentMember.name}
-                </span>
-              </>
+                <div className="min-w-0 text-left">
+                  <div className="text-xs sm:text-sm font-bold text-slate-800 truncate leading-tight">
+                    {currentMember.name}
+                  </div>
+                  <div className="text-[10px] font-medium text-slate-400 truncate leading-tight">
+                    {appState.config.tripName}
+                  </div>
+                </div>
+              </div>
             ) : (
               <>
                 <div
@@ -490,9 +492,6 @@ export default function App() {
                 <span className="text-sm font-semibold text-slate-700">Chọn tên</span>
               </>
             )}
-            <span className="hidden sm:inline text-xs text-slate-400 font-normal">
-              • {appState.config.tripName}
-            </span>
           </button>
 
           <div className="flex items-center gap-1 shrink-0">
@@ -540,41 +539,43 @@ export default function App() {
               </button>
             )}
 
+            {!isInstalled && (
+              <button
+                type="button"
+                onClick={async () => {
+                  if (isInstallable) {
+                    const ok = await installPWA();
+                    if (ok) showToast('Đã cài đặt ứng dụng!');
+                  } else {
+                    setIsPWAInstallOpen(true);
+                  }
+                }}
+                aria-label="Cài ứng dụng vào điện thoại"
+                title="Cài ứng dụng vào màn hình chính (PWA)"
+                className="w-9 h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
+              >
+                <Download aria-hidden="true" className="w-[17px] h-[17px]" />
+              </button>
+            )}
+
             <button
               type="button"
               onClick={() => setIsDarkMode((prev) => !prev)}
               aria-label={isDarkMode ? 'Chuyển sang chế độ Sáng' : 'Chuyển sang chế độ Tối'}
               title={isDarkMode ? 'Chế độ Sáng (Light Mode)' : 'Chế độ Tối (Dark Mode)'}
-              className="w-10 h-10 md:w-9 md:h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
+              className="w-9 h-9 rounded-xl hover:bg-brand-soft flex items-center justify-center text-slate-500 hover:text-brand transition-colors cursor-pointer"
             >
               {isDarkMode ? (
-                <Sun aria-hidden="true" className="w-[18px] h-[18px] text-amber-400" />
+                <Sun aria-hidden="true" className="w-[17px] h-[17px] text-amber-400" />
               ) : (
-                <Moon aria-hidden="true" className="w-[18px] h-[18px]" />
+                <Moon aria-hidden="true" className="w-[17px] h-[17px]" />
               )}
             </button>
           </div>
         </div>
       </header>
 
-      <main id="main-content" className="max-w-2xl mx-auto px-3.5 md:px-6 pt-4 space-y-5">
-        {/* Khối Tiêu đề lớn & Lời chào ngữ cảnh theo đúng layout TdyTime */}
-        <div className="pt-1 pb-1 flex items-start justify-between gap-3 select-none">
-          <div className="flex flex-col gap-0.5 min-w-0">
-            <h1 className="text-[21px] sm:text-2xl font-bold text-slate-800 tracking-tight truncate">
-              {appState.config.tripName}
-              {headerDurationShort &&
-              !appState.config.tripName.toUpperCase().includes(headerDurationShort)
-                ? ` · ${headerDurationShort}`
-                : ''}
-            </h1>
-            <p className="text-xs sm:text-sm font-medium text-slate-500 tracking-tight truncate">
-              {formatDateRangeVN(appState.config.startDate, appState.config.endDate)}
-              {currentMember ? ` • Chào ${currentMember.name}!` : ''}
-            </p>
-          </div>
-        </div>
-
+      <main id="main-content" className="max-w-2xl mx-auto px-3 md:px-6 pt-3 space-y-3.5">
         {appState.config.tripStatus === 'completed' && (
           <div className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center gap-2.5 text-xs shadow-sm">
             <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
@@ -846,6 +847,14 @@ export default function App() {
         onAcceptServer={handleAcceptServerVersion}
         onForceKeepClient={handleForceKeepClientVersion}
         onClose={() => setActiveConflict(null)}
+      />
+
+      <PWAInstallModal
+        isOpen={isPWAInstallOpen}
+        isIOS={isIOS}
+        isInstallable={isInstallable}
+        onInstallNative={installPWA}
+        onClose={() => setIsPWAInstallOpen(false)}
       />
 
       <Navbar

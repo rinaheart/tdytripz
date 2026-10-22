@@ -23,7 +23,6 @@ import {
   Trash2,
   Unlock,
   Users,
-  WifiOff,
 } from 'lucide-react';
 import {
   AVATAR_COLORS,
@@ -1026,36 +1025,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   className="min-h-[34px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
                 >
                   {showRawCodeGs ? 'Ẩn Code.gs' : 'Xem Code.gs'}
-                </button>
-
-                <button
-                  type="button"
-                  aria-pressed={simulateOffline}
-                  disabled={!isAdmin}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    onToggleSimulateOffline(!simulateOffline);
-                  }}
-                  className={`min-h-[34px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1 border transition-colors ${
-                    simulateOffline
-                      ? 'bg-amber-600 text-white border-amber-600'
-                      : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  <WifiOff aria-hidden="true" className="w-3.5 h-3.5" />
-                  <span>Offline</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!isAdmin}
-                  onClick={() => {
-                    if (!isAdmin) return;
-                    onTriggerDemoConflict();
-                  }}
-                  className="min-h-[34px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors"
-                >
-                  Test xung đột
                 </button>
 
                 {!confirmResetDemo ? (

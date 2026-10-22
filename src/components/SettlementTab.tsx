@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   Copy,
   Play,
-  ShieldCheck,
 } from 'lucide-react';
 import type {
   DebtTransaction,
@@ -106,21 +105,21 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
   };
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Phần 1 (Thông tin chính): Danh sách các khoản cần chuyển theo phong cách TdyTime Cards */}
-      <div className="space-y-2.5">
-        <div className="px-1 flex flex-wrap items-center justify-between gap-2">
+      <div className="space-y-2">
+        <div className="px-0.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand">
             <Play aria-hidden="true" className="w-3 h-3 fill-current" />
-            <span>CẦN CHUYỂN KHOẢN ({activeTransactions.length} KHOẢN)</span>
+            <span>CẦN CHUYỂN ({activeTransactions.length} KHOẢN)</span>
           </div>
 
-          <div className="grid grid-cols-2 p-1 bg-slate-200/70 rounded-xl shrink-0">
+          <div className="grid grid-cols-2 p-0.5 bg-slate-200/70 rounded-xl shrink-0">
             <button
               type="button"
               aria-pressed={viewMode === 'simplified'}
               onClick={() => setViewMode('simplified')}
-              className={`min-h-[32px] px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`min-h-[30px] px-2.5 py-0.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 viewMode === 'simplified'
                   ? 'bg-white text-brand shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -132,7 +131,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
               type="button"
               aria-pressed={viewMode === 'pairwise'}
               onClick={() => setViewMode('pairwise')}
-              className={`min-h-[32px] px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`min-h-[30px] px-2.5 py-0.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 viewMode === 'pairwise'
                   ? 'bg-white text-brand shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -144,13 +143,13 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
         </div>
 
         {activeTransactions.length === 0 ? (
-          <div className="p-8 rounded-2xl bg-white border-2 border-brand shadow-md shadow-brand/5 text-center space-y-1.5">
-            <CheckCircle2 aria-hidden="true" className="w-8 h-8 text-emerald-600 mx-auto" />
+          <div className="p-6 rounded-2xl bg-white border-2 border-brand shadow-sm shadow-brand/5 text-center space-y-1">
+            <CheckCircle2 aria-hidden="true" className="w-7 h-7 text-emerald-600 mx-auto" />
             <div className="text-sm font-bold text-slate-800">Không có khoản nợ nào</div>
             <div className="text-xs text-slate-500">Mọi thành viên đã quyết toán cân bằng.</div>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {activeTransactions.map((tx) => {
               const sender = getMember(tx.fromMemberId);
               const recipient = getMember(tx.toMemberId);
@@ -167,9 +166,9 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
               return (
                 <div
                   key={txKey}
-                  className={`p-4 rounded-2xl bg-white transition-all space-y-3 ${
+                  className={`p-3.5 rounded-2xl bg-white transition-all space-y-2.5 ${
                     isInvolvingMe
-                      ? 'border-2 border-brand shadow-md shadow-brand/5'
+                      ? 'border-2 border-brand shadow-sm shadow-brand/5'
                       : 'border border-slate-200/90 shadow-2xs'
                   }`}
                 >
@@ -180,15 +179,17 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
                         <ArrowRight aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-bold text-emerald-700 truncate">{recipient.name}</span>
                       </div>
-                      <div className="text-xs font-mono text-slate-500 truncate">
-                        {recipient.bankName ? (
-                          <strong className="text-slate-700">{recipient.bankName}</strong>
-                        ) : (
-                          'Ngân hàng'
-                        )}
-                        <span className="mx-1.5 text-slate-300">•</span>
-                        <span>{cleanAccountNo || 'Chưa có STK'}</span>
-                      </div>
+                      {(recipient.bankName || cleanAccountNo) && (
+                        <div className="text-xs font-mono text-slate-500 truncate">
+                          {recipient.bankName && (
+                            <strong className="text-slate-700">{recipient.bankName}</strong>
+                          )}
+                          {recipient.bankName && cleanAccountNo && (
+                            <span className="mx-1.5 text-slate-300">•</span>
+                          )}
+                          {cleanAccountNo && <span>{cleanAccountNo}</span>}
+                        </div>
+                      )}
                     </div>
 
                     <div className="text-right shrink-0">
@@ -245,26 +246,20 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
       </div>
 
       {/* Phần 2: Bảng cân đối chi tiêu */}
-      <div className="space-y-2">
-        <div className="px-1 flex flex-wrap items-center justify-between gap-2">
+      <div className="space-y-1.5">
+        <div className="px-0.5 flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-600">
             <Play aria-hidden="true" className="w-3 h-3 fill-current text-slate-400" />
-            <span>BẢNG CÂN ĐỐI (ĐƠN VỊ: ₫)</span>
+            <span>BẢNG CÂN ĐỐI (₫)</span>
           </div>
-
-          <div
-            className={`inline-flex items-center gap-1 text-xs font-semibold ${
-              sumOfBalances === 0 ? 'text-emerald-700' : 'text-amber-700'
-            }`}
-          >
-            <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {sumOfBalances === 0 ? 'Cân bằng: 0\u00A0₫' : `Lệch: ${formatVND(sumOfBalances)}`}
+          {sumOfBalances !== 0 && (
+            <span className="text-xs font-semibold text-amber-700">
+              Lệch: {formatVND(sumOfBalances)}
             </span>
-          </div>
+          )}
         </div>
 
-        <section className="p-4 sm:p-5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-x-auto">
+        <section className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wider font-bold text-slate-400">

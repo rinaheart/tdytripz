@@ -132,9 +132,9 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3.5">
       {/* Thanh tìm kiếm & bộ lọc tinh gọn theo phong cách TdyTime */}
-      <section className="p-3.5 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2.5">
+      <section className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
         <div className="relative flex items-center">
           <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
           <input
@@ -268,10 +268,10 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
           )}
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3.5">
           {groupedDays.map((group, grpIdx) => (
-            <section key={group.groupKey} className="space-y-2">
-              <div className="px-1 flex items-center justify-between text-xs">
+            <section key={group.groupKey} className="space-y-1.5">
+              <div className="px-0.5 flex items-center justify-between text-xs">
                 <div
                   className={`flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider ${
                     grpIdx === 0 ? 'text-brand' : 'text-slate-600'

@@ -1,0 +1,32 @@
+{
+  "id": "/",
+  "name": "TdyTime - Chia Tiền Nhóm",
+  "short_name": "TdyTime",
+  "description": "Ứng dụng quản lý chi tiêu và chia tiền nhóm du lịch chuẩn số nguyên VND, đồng bộ hai chiều với Google Sheets.",
+  "theme_color": "#1d4ed8",
+  "background_color": "#f8fafc",
+  "display": "standalone",
+  "orientation": "portrait",
+  "start_url": "/",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

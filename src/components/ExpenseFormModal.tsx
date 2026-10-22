@@ -10,7 +10,6 @@ import {
   Plus,
   Receipt,
   Trash2,
-  Users,
   X,
 } from 'lucide-react';
 import type {
@@ -458,14 +457,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             </div>
           )}
 
-          {recordType === 'transfer' && (
-            <div className="px-3.5 py-2.5 rounded-xl bg-brand-soft/60 border border-brand-border text-[11px] text-brand font-medium">
-              Khoản chuyển riêng giữa 2 người (ứng trước / trả trước). Không cộng vào tổng chi chung, chỉ dùng để cấn trừ công nợ.
-            </div>
-          )}
-
           {/* Số tiền VND */}
-          <div className="p-4 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-2">
+          <div className="p-3.5 rounded-2xl bg-slate-50/80 border border-slate-200/80 space-y-2">
             <label htmlFor="vnd-amount-input" className="block text-xs font-semibold text-slate-600">
               Số tiền (VND)
             </label>
@@ -479,7 +472,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 value={rawDigits}
                 onChange={(e) => handleAmountChange(e.target.value)}
                 placeholder="VD: 125 hoặc 350000…"
-                className="w-full min-h-[46px] px-3.5 py-2 rounded-xl bg-white border border-slate-300 focus:border-brand text-lg font-mono font-bold text-slate-900 tabular-nums"
+                className="w-full min-h-[44px] px-3.5 py-2 rounded-xl bg-white border border-slate-300 focus:border-brand text-lg font-mono font-bold text-slate-900 tabular-nums"
               />
               {rawDigits && (
                 <button
@@ -497,9 +490,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               <div className="text-2xl font-mono font-extrabold text-brand tabular-nums tracking-tight">
                 {formatVND(effectiveAmount)}
               </div>
-              <div className="text-xs text-slate-500 italic">
-                {effectiveAmount > 0 ? readVietnameseNumber(effectiveAmount) : 'Nhập số tiền'}
-              </div>
+              {effectiveAmount > 0 && (
+                <div className="text-xs text-slate-500 italic">
+                  {readVietnameseNumber(effectiveAmount)}
+                </div>
+              )}
             </div>
 
             {isShortInput && suggestionChips.length > 0 && (
@@ -736,14 +731,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
           {/* Chia tiền (chỉ hiện khi là Chi tiêu chung) */}
           {recordType === 'expense' && (
-            <div className="space-y-2.5 pt-0.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
-                  <Users aria-hidden="true" className="w-3.5 h-3.5 text-slate-500" />
-                  <span>Cách chia</span>
-                </span>
-              </div>
-
+            <div className="space-y-2 pt-0.5">
               <div className="grid grid-cols-3 gap-1 p-1 bg-slate-100 rounded-md">
                 {enabledModes.includes('equal') && (
                   <button
