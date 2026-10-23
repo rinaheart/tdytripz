@@ -259,17 +259,17 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
           )}
         </div>
 
-        <section className="p-3 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+        <section className="px-2.5 py-2.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-hidden">
+          <table className="w-full text-left border-collapse table-auto">
             <thead>
-              <tr className="border-b border-slate-100 text-[11px] uppercase tracking-wider font-bold text-slate-400">
-                <th scope="col" className="pb-2.5 pr-1.5">Thành viên</th>
-                <th scope="col" className="pb-2.5 px-1.5 text-right">Đã chi</th>
-                <th scope="col" className="pb-2.5 px-1.5 text-right">Phải chịu</th>
-                <th scope="col" className="pb-2.5 pl-1.5 pr-1 text-right">Dư / Thiếu</th>
+              <tr className="border-b border-slate-100 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-wider font-bold text-slate-400">
+                <th scope="col" className="pb-2 pr-1">Thành viên</th>
+                <th scope="col" className="pb-2 px-1 text-right whitespace-nowrap">Đã chi</th>
+                <th scope="col" className="pb-2 px-1 text-right whitespace-nowrap">Phải chịu</th>
+                <th scope="col" className="pb-2 pl-1 text-right whitespace-nowrap">Dư/Thiếu</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-100 text-xs">
+            <tbody className="divide-y divide-slate-100 text-[11px] sm:text-xs">
               {sortedBalances.map((row) => {
                 const member = getMember(row.memberId);
                 if (!member) return null;
@@ -281,33 +281,37 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
                       isMe ? 'bg-brand-soft/50 font-medium' : 'hover:bg-slate-50/70'
                     }`}
                   >
-                    <td className="py-3 pl-1 pr-1.5 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
+                    <td className="py-2 pr-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
                         <MemberAvatar member={member} size="sm" />
-                        <div>
-                          <div className="flex items-center gap-1">
-                            <span className="font-bold text-slate-800">{member.name}</span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-1 min-w-0">
+                            <span className="font-bold text-slate-800 truncate max-w-[72px] sm:max-w-none">
+                              {member.name}
+                            </span>
                             {isMe && (
-                              <span className="text-[11px] text-brand font-bold">(Bạn)</span>
+                              <span className="text-[10px] text-brand font-bold shrink-0">
+                                •
+                              </span>
                             )}
                           </div>
                           {row.netTransfer !== 0 && (
-                            <div className="text-[10px] font-mono text-amber-700 tabular-nums">
-                              {row.netTransfer > 0 ? 'Chuyển: +' : 'Nhận: '}
+                            <div className="text-[9.5px] sm:text-[10px] font-mono text-amber-700 tabular-nums tracking-tight whitespace-nowrap">
+                              {row.netTransfer > 0 ? 'CK: +' : 'Nhận: '}
                               {formatVND(row.netTransfer, false)}
                             </div>
                           )}
                         </div>
                       </div>
                     </td>
-                    <td className="py-3 px-1.5 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap">
+                    <td className="py-2 px-1 text-right font-mono text-slate-700 tabular-nums tracking-tight whitespace-nowrap">
                       {formatVND(row.paidExpense, false)}
                     </td>
-                    <td className="py-3 px-1.5 text-right font-mono text-slate-700 tabular-nums whitespace-nowrap">
+                    <td className="py-2 px-1 text-right font-mono text-slate-700 tabular-nums tracking-tight whitespace-nowrap">
                       {formatVND(row.owedExpense, false)}
                     </td>
                     <td
-                      className={`py-3 pl-1.5 pr-1 text-right font-mono font-extrabold tabular-nums whitespace-nowrap ${
+                      className={`py-2 pl-1 text-right font-mono font-extrabold tabular-nums tracking-tight whitespace-nowrap ${
                         row.balance > 0
                           ? 'text-emerald-700'
                           : row.balance < 0

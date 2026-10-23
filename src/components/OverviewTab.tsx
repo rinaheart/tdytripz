@@ -1,6 +1,5 @@
 import React, { useMemo } from 'react';
 import {
-  ArrowRight,
   Car,
   ChevronRight,
   Hotel,
@@ -292,7 +291,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             className="text-xs font-bold text-brand hover:underline inline-flex items-center gap-0.5 cursor-pointer"
           >
             <span>Chi tiết</span>
-            <ArrowRight aria-hidden="true" className="w-3.5 h-3.5" />
+            <ChevronRight aria-hidden="true" className="w-3.5 h-3.5" />
           </button>
         </div>
 
