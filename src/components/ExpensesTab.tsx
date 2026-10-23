@@ -410,7 +410,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                         </div>
                       </div>
 
-                      {/* Phải: Số tiền tổng + Phần của bạn */}
+                      {/* Phải: Số tiền tổng + Phần của bạn (chỉ hiển thị số, bỏ đơn vị đ) */}
                       <div className="text-right shrink-0">
                         <div
                           className={`text-sm font-mono font-extrabold tabular-nums ${
@@ -421,7 +421,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                               : 'text-slate-900'
                           }`}
                         >
-                          {formatVND(exp.amount)}
+                          {formatVND(exp.amount, false)}
                         </div>
 
                         <div className="mt-0.5 text-[11px] font-mono tabular-nums">
@@ -435,7 +435,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = ({
                             </span>
                           ) : mySplit > 0 ? (
                             <span className="text-brand font-semibold">
-                              Bạn: {formatVND(mySplit)}
+                              Bạn: {formatVND(mySplit, false)}
                             </span>
                           ) : (
                             <span className="text-slate-600 font-sans">Không chia</span>
