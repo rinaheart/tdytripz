@@ -160,9 +160,11 @@ test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) có đủ T�
   assert.equal(report.rows[0].date, '24/10/2026 08:15');
   assert.equal(report.rows[0].participantsSummary, 'Minh Anh, Hoàng Nam');
   assert.equal(report.rows[0].compactTypeLabel, 'Di chuyển');
+  assert.equal(report.rows[1].id, 'exp_1');
+  assert.equal(report.rows[1].participantsSummary, '3 người');
   assert.equal(report.rows[2].id, 'exp_3');
   assert.equal(report.rows[2].typeLabel, 'Chuyển trả');
-  assert.equal(report.rows[2].participantsSummary, 'Hoàng Nam -> Minh Anh');
+  assert.equal(report.rows[2].participantsSummary, 'Hoàng Nam → Minh Anh');
 
   // 4. Kiểm tra Phụ lục cá nhân (3 trang tương ứng 3 thành viên)
   assert.equal(report.memberAppendices.length, 3);
@@ -201,5 +203,6 @@ test('formatSpentAtReportVN, sanitizeFileNameSegment & shortenCategoryLabelForTa
   assert.equal(sanitizeFileNameSegment('Đà Lạt 2026!'), 'da-lat-2026');
   assert.equal(shortenCategoryLabelForTable('Vé đi/về (máy bay/tàu xe)'), 'Vé đi/về');
   assert.equal(shortenCategoryLabelForTable('Lưu trú (KS/homestay)'), 'Lưu trú');
+  assert.equal(shortenCategoryLabelForTable('Di chuyển tại chỗ'), 'Di chuyển');
 });
 

@@ -20,6 +20,7 @@ export interface ExpenseReportRow {
   memberShareFormatted: string | null;
   typeLabel: string;
   compactTypeLabel: string;
+  categoryIcon: string;
   recordType: 'expense' | 'transfer';
   participantsSummary: string;
 }
@@ -37,6 +38,7 @@ export interface MemberReportSummary {
 export interface ReportCategoryBreakdown {
   categoryId: string;
   categoryName: string;
+  categoryIcon: string;
   amount: number;
   count: number;
   percentage: number;
@@ -52,6 +54,7 @@ export interface ReportDayBreakdown {
 
 export interface EnrichedMemberBalance extends MemberBalance {
   memberName: string;
+  avatarColor: string;
   bankInfo: string;
 }
 
@@ -64,6 +67,7 @@ export interface EnrichedDebtTransaction extends DebtTransaction {
 export interface MemberAppendixData {
   memberId: string;
   memberName: string;
+  avatarColor: string;
   bankInfo: string;
   paidExpense: number;
   owedExpense: number;
@@ -134,9 +138,45 @@ export function sanitizeFileNameSegment(input: string): string {
 
 export function shortenCategoryLabelForTable(label: string): string {
   if (!label) return 'Khác';
-  // Rút gọn phần giải thích trong ngoặc đơn cho cột bảng hẹp để không bị rớt dòng lẻ
   const withoutParens = label.replace(/\s*\([^)]*\)/g, '').trim();
-  return withoutParens || label;
+  const normalized = withoutParens
+    .replace(/^Di chuyển tại chỗ$/i, 'Di chuyển')
+    .replace(/^Khách sạn\s*\/\s*Lưu trú$/i, 'Lưu trú')
+    .replace(/^Vé máy bay\s*\/\s*Tàu xe$/i, 'Vé đi/về')
+    .trim();
+  return normalized || label;
+}
+
+function resolveCategoryIconName(cat?: Category, rawName?: string): string {
+  const icon = (cat?.icon || '').trim();
+  if (
+    icon === 'Plane' ||
+    icon === 'Car' ||
+    icon === 'Utensils' ||
+    icon === 'Hotel' ||
+    icon === 'Ticket' ||
+    icon === 'Package'
+  ) {
+    return icon;
+  }
+  const n = (rawName || cat?.name || '').toLowerCase();
+  const id = (cat?.id || '').toLowerCase();
+  if (id.includes('flight') || n.includes('vé đi') || n.includes('máy bay') || n.includes('tàu')) {
+    return 'Plane';
+  }
+  if (id.includes('transport') || id.includes('move') || n.includes('di chuyển') || n.includes('taxi') || n.includes('xe')) {
+    return 'Car';
+  }
+  if (id.includes('food') || n.includes('ăn') || n.includes('uống') || n.includes('cafe')) {
+    return 'Utensils';
+  }
+  if (id.includes('hotel') || n.includes('lưu trú') || n.includes('khách sạn') || n.includes('homestay')) {
+    return 'Hotel';
+  }
+  if (id.includes('ticket') || n.includes('tham quan') || n.includes('vé chơi')) {
+    return 'Ticket';
+  }
+  return 'Package';
 }
 
 function formatMemberBankInfo(member?: Member): string {
@@ -158,7 +198,8 @@ function getEffectiveRecordAmount(record: ExpenseRecord): number {
 
 function formatParticipantsSummary(
   record: ExpenseRecord,
-  memberMap: Map<string, Member>
+  memberMap: Map<string, Member>,
+  totalActiveMembersCount: number
 ): string {
   const entries = Object.entries(record.splits || {}).filter(
     ([, val]) => Math.round(val || 0) > 0
@@ -168,7 +209,12 @@ function formatParticipantsSummary(
   const names = entries.map(([id]) => memberMap.get(id)?.name || id);
   if (record.type === 'transfer') {
     const payerName = memberMap.get(record.payer)?.name || record.payer;
-    return `${payerName} -> ${names.join(', ')}`;
+    return `${payerName} → ${names.join(', ')}`;
+  }
+
+  // Nếu khoản chi chia hết cho tất cả thành viên trong đoàn thì chỉ ghi "xx người"
+  if (totalActiveMembersCount > 0 && entries.length >= totalActiveMembersCount) {
+    return `${entries.length} người`;
   }
 
   if (names.length <= 3) {
@@ -184,7 +230,7 @@ function computeDayLabel(datePart: string, startDate?: string): string {
     return shortVN;
   }
   if (datePart < startDate) {
-    return `Trước chuyến • ${shortVN}`;
+    return `Trước chuyến (${shortVN.slice(0, 5)})`;
   }
   const startMs = Date.parse(`${startDate.slice(0, 10)}T00:00:00Z`);
   const curMs = Date.parse(`${datePart.slice(0, 10)}T00:00:00Z`);
@@ -208,6 +254,7 @@ export function buildExpenseReportData(params: {
   const normalizedFilter = filterMemberId && filterMemberId !== 'all' ? filterMemberId : 'all';
 
   const activeMembers = members.filter((m) => !m.deleted);
+  const memberCount = activeMembers.length;
   const memberMap = new Map<string, Member>();
   for (const m of members) {
     memberMap.set(m.id, m);
@@ -232,7 +279,7 @@ export function buildExpenseReportData(params: {
   let fullExpenseCount = 0;
   let fullTransferCount = 0;
 
-  const catAgg = new Map<string, { name: string; amount: number; count: number }>();
+  const catAgg = new Map<string, { name: string; icon: string; amount: number; count: number }>();
   const dayAgg = new Map<string, { label: string; amount: number; count: number }>();
 
   for (const rec of allActiveRecords) {
@@ -245,8 +292,10 @@ export function buildExpenseReportData(params: {
       fullExpenseCount += 1;
 
       const catId = rec.categoryId || 'cat_other';
-      const catName = categoryMap.get(catId)?.name || 'Khác';
-      const curCat = catAgg.get(catId) || { name: catName, amount: 0, count: 0 };
+      const catObj = categoryMap.get(catId);
+      const catName = shortenCategoryLabelForTable(catObj?.name || 'Khác');
+      const catIcon = resolveCategoryIconName(catObj, catName);
+      const curCat = catAgg.get(catId) || { name: catName, icon: catIcon, amount: 0, count: 0 };
       curCat.amount += effAmount;
       curCat.count += 1;
       catAgg.set(catId, curCat);
@@ -267,6 +316,7 @@ export function buildExpenseReportData(params: {
     .map(([categoryId, item]) => ({
       categoryId,
       categoryName: item.name,
+      categoryIcon: item.icon,
       amount: item.amount,
       count: item.count,
       percentage:
@@ -285,7 +335,6 @@ export function buildExpenseReportData(params: {
         fullExpenseTotal > 0 ? Math.round((item.amount / fullExpenseTotal) * 1000) / 10 : 0,
     }));
 
-  const memberCount = activeMembers.length;
   const averagePerMember = memberCount > 0 ? Math.round(fullExpenseTotal / memberCount) : 0;
 
   // 2. Tính toán Chia tiền & Quyết toán (Settlement)
@@ -295,6 +344,7 @@ export function buildExpenseReportData(params: {
     return {
       ...b,
       memberName: m?.name || b.memberId,
+      avatarColor: m?.avatarColor || '#0f766e',
       bankInfo: formatMemberBankInfo(m),
     };
   });
@@ -321,10 +371,12 @@ export function buildExpenseReportData(params: {
   ): ExpenseReportRow => {
     const cleanAmount = getEffectiveRecordAmount(e);
     const payerName = memberMap.get(e.payer)?.name || e.payer;
-    const typeLabel =
-      e.type === 'transfer' ? 'Chuyển trả' : categoryMap.get(e.categoryId)?.name || 'Khác';
-    const compactTypeLabel =
-      e.type === 'transfer' ? 'Chuyển trả' : shortenCategoryLabelForTable(typeLabel);
+    const catObj = categoryMap.get(e.categoryId);
+    const rawCatName = catObj?.name || 'Khác';
+    const typeLabel = e.type === 'transfer' ? 'Chuyển trả' : shortenCategoryLabelForTable(rawCatName);
+    const compactTypeLabel = typeLabel;
+    const categoryIcon =
+      e.type === 'transfer' ? 'ArrowRightLeft' : resolveCategoryIconName(catObj, typeLabel);
     const memberShare =
       targetMemberId === null ? null : Math.round(e.splits?.[targetMemberId] || 0);
 
@@ -340,8 +392,9 @@ export function buildExpenseReportData(params: {
       memberShareFormatted: memberShare !== null ? formatVND(memberShare, false) : null,
       typeLabel,
       compactTypeLabel,
+      categoryIcon,
       recordType: e.type,
-      participantsSummary: formatParticipantsSummary(e, memberMap),
+      participantsSummary: formatParticipantsSummary(e, memberMap, memberCount),
     };
   };
 
@@ -388,7 +441,7 @@ export function buildExpenseReportData(params: {
       .filter((e) => Math.round(e.splits?.[m.id] || 0) > 0)
       .map((e) => toReportRow(e, m.id));
 
-    const personalCatMap = new Map<string, { name: string; amount: number; count: number }>();
+    const personalCatMap = new Map<string, { name: string; icon: string; amount: number; count: number }>();
     let personalTotalOwed = 0;
 
     for (const e of allActiveRecords) {
@@ -397,8 +450,10 @@ export function buildExpenseReportData(params: {
       if (myShare <= 0) continue;
       personalTotalOwed += myShare;
       const catId = e.categoryId || 'cat_other';
-      const catName = categoryMap.get(catId)?.name || 'Khác';
-      const cur = personalCatMap.get(catId) || { name: catName, amount: 0, count: 0 };
+      const catObj = categoryMap.get(catId);
+      const catName = shortenCategoryLabelForTable(catObj?.name || 'Khác');
+      const catIcon = resolveCategoryIconName(catObj, catName);
+      const cur = personalCatMap.get(catId) || { name: catName, icon: catIcon, amount: 0, count: 0 };
       cur.amount += myShare;
       cur.count += 1;
       personalCatMap.set(catId, cur);
@@ -408,6 +463,7 @@ export function buildExpenseReportData(params: {
       .map(([categoryId, item]) => ({
         categoryId,
         categoryName: item.name,
+        categoryIcon: item.icon,
         amount: item.amount,
         count: item.count,
         percentage:
@@ -420,6 +476,7 @@ export function buildExpenseReportData(params: {
     return {
       memberId: m.id,
       memberName: m.name,
+      avatarColor: m.avatarColor || '#0f766e',
       bankInfo: formatMemberBankInfo(m),
       paidExpense,
       owedExpense,
@@ -593,33 +650,323 @@ async function ensureRobotoFontsLoaded(): Promise<{ regular: string; medium: str
 }
 
 // ============================================================================
-// HỆ THỐNG MÀU SẮC & LAYOUT SWISS EDITORIAL (TINH GIẢN, SẴN SÀNG IN ẤN)
+// HỆ THỐNG RENDER ICON LUCIDE (TƯƠNG ĐỒNG 100% VỚI WEB APP) + VECTOR ARROW SYMBOL
 // ============================================================================
 
+const LUCIDE_ICON_PATHS: Record<string, string[]> = {
+  Plane: [
+    'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z',
+  ],
+  Car: [
+    'M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2',
+    'M7 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0',
+    'M15 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0',
+    'M9 17h6',
+  ],
+  Utensils: [
+    'M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2',
+    'M7 2v20',
+    'M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7',
+  ],
+  Hotel: [
+    'M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z',
+    'M9 22v-4h6v4',
+    'M8 6h.01',
+    'M16 6h.01',
+    'M12 6h.01',
+    'M12 10h.01',
+    'M12 14h.01',
+    'M16 10h.01',
+    'M16 14h.01',
+    'M8 10h.01',
+    'M8 14h.01',
+  ],
+  Ticket: [
+    'M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z',
+    'M13 5v2',
+    'M13 17v2',
+    'M13 11v2',
+  ],
+  Package: [
+    'm7.5 4.27 9 5.15',
+    'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z',
+    'm3.3 7 8.7 5 8.7-5',
+    'M12 22V12',
+  ],
+  Wallet: [
+    'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1',
+    'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
+  ],
+  Users: [
+    'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2',
+    'M5 7a4 4 0 1 0 8 0 4 4 0 1 0-8 0',
+    'M22 21v-2a4 4 0 0 0-3-3.87',
+    'M16 3.13a4 4 0 0 1 0 7.75',
+  ],
+  PieChart: [
+    'M21.21 15.89A10 10 0 1 1 8 2.83',
+    'M22 12A10 10 0 0 0 12 2v10z',
+  ],
+  Award: [
+    'M6 9a6 6 0 1 0 12 0A6 6 0 1 0 6 9',
+    'M15.477 12.89 17 22l-5-3-5 3 1.523-9.11',
+  ],
+  Calendar: [
+    'M8 2v4',
+    'M16 2v4',
+    'M3 10h18',
+    'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
+  ],
+  ArrowRightLeft: [
+    'm16 3 4 4-4 4',
+    'M20 7H4',
+    'm8 21-4-4 4-4',
+    'M4 17h16',
+  ],
+  Send: [
+    'm22 2-7 20-4-9-9-4Z',
+    'M22 2 11 13',
+  ],
+  CheckCircle: [
+    'M22 11.08V12a10 10 0 1 1-5.93-9.14',
+    'm9 11 3 3L22 4',
+  ],
+  MapPin: [
+    'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z',
+    'M9 10a3 3 0 1 0 6 0 3 3 0 1 0-6 0',
+  ],
+};
+
+const iconDataUrlCache = new Map<string, string>();
+
+function renderLucideIconDataUrl(
+  iconName: string,
+  strokeRgb: [number, number, number],
+  bgRgb?: [number, number, number]
+): string | null {
+  if (typeof document === 'undefined' || typeof Path2D === 'undefined') return null;
+
+  const cacheKey = `${iconName}_${strokeRgb.join(',')}_${bgRgb ? bgRgb.join(',') : 'none'}`;
+  const cached = iconDataUrlCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const size = 96;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+
+    if (bgRgb) {
+      ctx.fillStyle = `rgb(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]})`;
+      const r = 22;
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.lineTo(size - r, 0);
+      ctx.quadraticCurveTo(size, 0, size, r);
+      ctx.lineTo(size, size - r);
+      ctx.quadraticCurveTo(size, size, size - r, size);
+      ctx.lineTo(r, size);
+      ctx.quadraticCurveTo(0, size, 0, size - r);
+      ctx.lineTo(0, r);
+      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.closePath();
+      ctx.fill();
+    }
+
+    const pad = bgRgb ? 20 : 6;
+    const scale = (size - pad * 2) / 24;
+    ctx.save();
+    ctx.translate(pad, pad);
+    ctx.scale(scale, scale);
+    ctx.strokeStyle = `rgb(${strokeRgb[0]}, ${strokeRgb[1]}, ${strokeRgb[2]})`;
+    ctx.lineWidth = 2.25;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+
+    const paths = LUCIDE_ICON_PATHS[iconName] || LUCIDE_ICON_PATHS.Package;
+    for (const d of paths) {
+      const p = new Path2D(d);
+      ctx.stroke(p);
+    }
+    ctx.restore();
+
+    const dataUrl = canvas.toDataURL('image/png');
+    iconDataUrlCache.set(cacheKey, dataUrl);
+    return dataUrl;
+  } catch {
+    return null;
+  }
+}
+
+function drawIconBadge(
+  doc: any,
+  iconName: string,
+  x: number,
+  y: number,
+  sizeMm: number,
+  strokeRgb: [number, number, number],
+  bgRgb?: [number, number, number]
+): void {
+  const dataUrl = renderLucideIconDataUrl(iconName, strokeRgb, bgRgb);
+  if (dataUrl) {
+    doc.addImage(dataUrl, 'PNG', x, y, sizeMm, sizeMm);
+    return;
+  }
+  if (bgRgb) {
+    doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
+    doc.roundedRect(x, y, sizeMm, sizeMm, sizeMm * 0.22, sizeMm * 0.22, 'F');
+  }
+}
+
+/**
+ * Vẽ ký hiệu mũi tên vector (→) sắc nét tuyệt đối không phụ thuộc vào glyph của font
+ */
+function drawVectorArrowSymbol(
+  doc: any,
+  startX: number,
+  centerY: number,
+  lengthMm: number,
+  rgb: [number, number, number]
+): void {
+  const headLen = 1.25;
+  const headHalfH = 0.78;
+  const endX = startX + lengthMm;
+  const shaftEndX = endX - headLen * 0.65;
+
+  doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+  doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+  doc.setLineWidth(0.4);
+  doc.line(startX, centerY, shaftEndX, centerY);
+  doc.triangle(
+    endX,
+    centerY,
+    endX - headLen,
+    centerY - headHalfH,
+    endX - headLen,
+    centerY + headHalfH,
+    'F'
+  );
+}
+
+/**
+ * Vẽ cặp "Người chuyển → Người nhận" với mũi tên vector chính xác ở giữa
+ */
+function drawTransferPairWithArrow(
+  doc: any,
+  activeFont: string,
+  fontStyle: 'normal' | 'bold',
+  fontSize: number,
+  leftText: string,
+  rightText: string,
+  startX: number,
+  baselineY: number,
+  leftRgb: [number, number, number],
+  arrowRgb: [number, number, number],
+  rightRgb: [number, number, number]
+): number {
+  doc.setFont(activeFont, fontStyle);
+  doc.setFontSize(fontSize);
+  doc.setTextColor(leftRgb[0], leftRgb[1], leftRgb[2]);
+  doc.text(leftText, startX, baselineY);
+
+  const leftW = doc.getTextWidth(leftText);
+  const gap = 2.1;
+  const arrowLen = 3.8;
+  const arrowStartX = startX + leftW + gap;
+  const arrowCenterY = baselineY - fontSize * 0.115;
+
+  drawVectorArrowSymbol(doc, arrowStartX, arrowCenterY, arrowLen, arrowRgb);
+
+  const rightX = arrowStartX + arrowLen + gap;
+  doc.setFont(activeFont, fontStyle);
+  doc.setFontSize(fontSize);
+  doc.setTextColor(rightRgb[0], rightRgb[1], rightRgb[2]);
+  doc.text(rightText, rightX, baselineY);
+
+  return rightX + doc.getTextWidth(rightText);
+}
+
+function hexToRgb(hex: string, fallback: [number, number, number] = [13, 148, 136]): [number, number, number] {
+  const clean = (hex || '').replace('#', '').trim();
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
+      return [r, g, b];
+    }
+  }
+  return fallback;
+}
+
+// ============================================================================
+// HỆ MÀU DIGITAL DASHBOARD NỔI BẬT, ẤN TƯỢNG TRÊN MÀN HÌNH PDF
+// ============================================================================
+
+const COLOR_HERO_DARK: [number, number, number] = [15, 23, 42]; // Slate 900
+const COLOR_HERO_CARD: [number, number, number] = [30, 41, 59]; // Slate 800
 const COLOR_INK: [number, number, number] = [15, 23, 42]; // Slate 900
 const COLOR_SLATE: [number, number, number] = [71, 85, 105]; // Slate 600
 const COLOR_MUTED: [number, number, number] = [100, 116, 139]; // Slate 500
 const COLOR_BORDER: [number, number, number] = [226, 232, 240]; // Slate 200
-const COLOR_SURFACE: [number, number, number] = [248, 250, 252]; // Slate 50
 const COLOR_TEAL: [number, number, number] = [13, 148, 136]; // Teal 600
 const COLOR_TEAL_DARK: [number, number, number] = [15, 118, 110]; // Teal 700
-const COLOR_ROSE: [number, number, number] = [190, 18, 60]; // Rose 700
+const COLOR_EMERALD_BRIGHT: [number, number, number] = [52, 211, 153]; // Emerald 400
+const COLOR_ROSE: [number, number, number] = [225, 29, 72]; // Rose 600
+const COLOR_ROSE_DARK: [number, number, number] = [190, 18, 60]; // Rose 700
 
-// Bảng màu đơn sắc/hài hòa chuyên nghiệp khi in ấn (tránh cầu vồng lòe loẹt)
-const EDITORIAL_BAR_PALETTE: Array<[number, number, number]> = [
-  [13, 148, 136], // Teal 600 (Hạng mục lớn nhất)
-  [15, 118, 110], // Teal 700
-  [30, 64, 175], // Blue 800
-  [51, 65, 85], // Slate 700
-  [100, 116, 139], // Slate 500
-  [148, 163, 184], // Slate 400
+const CATEGORY_THEME_MAP: Record<
+  string,
+  { stroke: [number, number, number]; bg: [number, number, number]; bar: [number, number, number] }
+> = {
+  Plane: {
+    stroke: [37, 99, 235],
+    bg: [219, 234, 254],
+    bar: [37, 99, 235], // Blue 600
+  },
+  Utensils: {
+    stroke: [217, 119, 6],
+    bg: [254, 243, 199],
+    bar: [245, 158, 11], // Amber 500
+  },
+  Hotel: {
+    stroke: [124, 58, 237],
+    bg: [237, 233, 254],
+    bar: [124, 58, 237], // Violet 600
+  },
+  Car: {
+    stroke: [13, 148, 136],
+    bg: [204, 251, 241],
+    bar: [13, 148, 136], // Teal 600
+  },
+  Ticket: {
+    stroke: [219, 39, 119],
+    bg: [252, 231, 243],
+    bar: [219, 39, 119], // Pink 600
+  },
+  Package: {
+    stroke: [71, 85, 105],
+    bg: [226, 232, 240],
+    bar: [100, 116, 139], // Slate 500
+  },
+};
+
+const DAY_BAR_PALETTE: Array<[number, number, number]> = [
+  [13, 148, 136], // Teal 600
+  [14, 116, 144], // Cyan 700
+  [2, 132, 199], // Sky 600
+  [37, 99, 235], // Blue 600
+  [79, 70, 229], // Indigo 600
+  [124, 58, 237], // Violet 600
 ];
 
 function ensurePageSpace(doc: any, cursorY: number, neededHeight: number): number {
   const pageHeight = doc.internal.pageSize.getHeight();
-  if (cursorY + neededHeight > pageHeight - 15) {
+  if (cursorY + neededHeight > pageHeight - 14) {
     doc.addPage();
-    return 15;
+    return 13;
   }
   return cursorY;
 }
@@ -634,52 +981,82 @@ function drawExecutiveMasthead(
   pageWidth: number
 ): number {
   const fullW = pageWidth - marginX * 2;
-  let y = startY;
+  const bannerH = 22;
+  const y = startY;
 
-  // Đường kẻ nhấn thương hiệu trên cùng (2 màu: Slate 900 + Teal 600)
-  doc.setFillColor(...COLOR_INK);
-  doc.rect(marginX, y, fullW * 0.72, 1.2, 'F');
-  doc.setFillColor(...COLOR_TEAL);
-  doc.rect(marginX + fullW * 0.72, y, fullW * 0.28, 1.2, 'F');
-  y += 5.5;
+  doc.setFillColor(...COLOR_HERO_DARK);
+  doc.roundedRect(marginX, y, fullW, bannerH, 2.5, 2.5, 'F');
 
-  // Nhãn phân loại tài liệu
+  doc.setFillColor(20, 184, 166);
+  doc.roundedRect(marginX, y, fullW, 1.5, 1, 1, 'F');
+
+  drawIconBadge(doc, 'Wallet', marginX + 4, y + 3.2, 4.4, [20, 184, 166], [30, 41, 59]);
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...COLOR_TEAL);
-  doc.text(`TDYTRIP  •  ${subtitleBadge}`, marginX, y);
+  doc.setFontSize(7.2);
+  doc.setTextColor(...COLOR_EMERALD_BRIGHT);
+  doc.text(`TDYTRIP  •  ${subtitleBadge}`, marginX + 9.8, y + 6.3);
 
-  // Thời gian xuất góc phải
-  doc.setFont(activeFont, 'normal');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...COLOR_MUTED);
-  doc.text(`Xuất báo cáo: ${report.generatedAt}`, pageWidth - marginX, y, { align: 'right' });
-
-  y += 6;
-
-  // Tên chuyến đi lớn, sắc nét
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(15);
-  doc.setTextColor(...COLOR_INK);
-  doc.text(report.tripName.toUpperCase(), marginX, y);
+  doc.setTextColor(255, 255, 255);
+  const maxTitleLen = report.tripName.length > 36 ? `${report.tripName.slice(0, 35)}…` : report.tripName;
+  doc.text(maxTitleLen.toUpperCase(), marginX + 4, y + 13.4);
 
-  // Thông tin Địa điểm & Thời gian bên phải cùng hàng hoặc ngay dưới
-  const metaRight: string[] = [];
-  if (report.location) metaRight.push(report.location);
-  if (report.dateRangeLabel) metaRight.push(report.dateRangeLabel);
-  if (metaRight.length > 0) {
-    doc.setFont(activeFont, 'bold');
-    doc.setFontSize(8.5);
-    doc.setTextColor(...COLOR_SLATE);
-    doc.text(metaRight.join('  •  '), pageWidth - marginX, y, { align: 'right' });
+  let metaX = marginX + 4;
+  const metaY = y + 18.8;
+  if (report.location) {
+    drawIconBadge(doc, 'MapPin', metaX, metaY - 3, 3.5, [56, 189, 248]);
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(203, 213, 225);
+    doc.text(report.location, metaX + 4.3, metaY);
+    metaX += doc.getTextWidth(report.location) + 8.5;
   }
 
-  y += 3.5;
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.25);
-  doc.line(marginX, y, pageWidth - marginX, y);
+  if (report.dateRangeLabel) {
+    drawIconBadge(doc, 'Calendar', metaX, metaY - 3, 3.5, [52, 211, 153]);
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(7.8);
+    doc.setTextColor(203, 213, 225);
+    doc.text(report.dateRangeLabel, metaX + 4.3, metaY);
+  }
 
-  return y + 4.5;
+  // Hộp Highlight bên phải Hero Banner
+  const rightBoxW = 56;
+  const rightBoxX = pageWidth - marginX - rightBoxW - 3;
+  const rightBoxY = y + 2.8;
+  const rightBoxH = bannerH - 5.6;
+
+  doc.setFillColor(...COLOR_HERO_CARD);
+  doc.setDrawColor(51, 65, 85);
+  doc.setLineWidth(0.25);
+  doc.roundedRect(rightBoxX, rightBoxY, rightBoxW, rightBoxH, 1.8, 1.8, 'FD');
+
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(6.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text('TỔNG CHI TOÀN ĐOÀN', rightBoxX + rightBoxW - 3, rightBoxY + 4.2, {
+    align: 'right',
+  });
+
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(11.8);
+  doc.setTextColor(...COLOR_EMERALD_BRIGHT);
+  doc.text(
+    `${formatVND(report.overview.totalExpenseAmount, false)} đ`,
+    rightBoxX + rightBoxW - 3,
+    rightBoxY + 10.4,
+    { align: 'right' }
+  );
+
+  doc.setFont(activeFont, 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(148, 163, 184);
+  doc.text(`Xuất: ${report.generatedAt}`, rightBoxX + rightBoxW - 3, rightBoxY + 14.3, {
+    align: 'right',
+  });
+
+  return y + bannerH + 3.5;
 }
 
 function drawSectionHeading(
@@ -692,31 +1069,28 @@ function drawSectionHeading(
   cursorY: number,
   pageWidth: number
 ): number {
-  const y = ensurePageSpace(doc, cursorY, 12);
+  const y = ensurePageSpace(doc, cursorY, 11);
 
-  // Pill đánh số thứ tự phần (ví dụ: 01, 02, 03)
-  doc.setFillColor(...COLOR_INK);
-  doc.roundedRect(marginX, y - 0.5, 7, 5, 1, 1, 'F');
+  doc.setFillColor(...COLOR_TEAL_DARK);
+  doc.roundedRect(marginX, y - 0.5, 7.2, 5, 1.2, 1.2, 'F');
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(255, 255, 255);
-  doc.text(sectionCode, marginX + 3.5, y + 3, { align: 'center' });
+  doc.text(sectionCode, marginX + 3.6, y + 3, { align: 'center' });
 
-  // Tiêu đề phần
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(10.5);
+  doc.setFontSize(10.2);
   doc.setTextColor(...COLOR_INK);
-  doc.text(title, marginX + 9.2, y + 3.2);
+  doc.text(title, marginX + 9.4, y + 3.1);
 
-  // Ghi chú ngắn bên phải
   if (rightNote) {
-    doc.setFont(activeFont, 'normal');
-    doc.setFontSize(7.8);
-    doc.setTextColor(...COLOR_MUTED);
-    doc.text(rightNote, pageWidth - marginX, y + 3.2, { align: 'right' });
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.4);
+    doc.setTextColor(...COLOR_TEAL_DARK);
+    doc.text(rightNote, pageWidth - marginX, y + 3.1, { align: 'right' });
   }
 
-  return y + 7.2;
+  return y + 6.4;
 }
 
 function drawFourKpiRow(
@@ -726,14 +1100,18 @@ function drawFourKpiRow(
     label: string;
     value: string;
     subtext?: string;
-    accentColor?: [number, number, number];
+    iconName: string;
+    accentColor: [number, number, number];
+    surfaceColor: [number, number, number];
+    borderColor: [number, number, number];
+    iconBgColor: [number, number, number];
     valueColor?: [number, number, number];
   }>,
   marginX: number,
   cursorY: number,
   pageWidth: number
 ): number {
-  const boxHeight = 16.5;
+  const boxHeight = 17.2;
   const y = ensurePageSpace(doc, cursorY, boxHeight + 3);
   const gap = 3;
   const totalWidth = pageWidth - marginX * 2;
@@ -741,103 +1119,130 @@ function drawFourKpiRow(
 
   items.slice(0, 4).forEach((item, idx) => {
     const x = marginX + idx * (colWidth + gap);
-    doc.setFillColor(255, 255, 255);
-    doc.setDrawColor(...COLOR_BORDER);
-    doc.setLineWidth(0.22);
-    doc.roundedRect(x, y, colWidth, boxHeight, 1.5, 1.5, 'FD');
 
-    // Viền nhấn mảnh phía trên mỗi ô KPI
-    const accent = item.accentColor || COLOR_INK;
-    doc.setFillColor(accent[0], accent[1], accent[2]);
-    doc.rect(x + 0.2, y + 0.2, colWidth - 0.4, 0.9, 'F');
+    doc.setFillColor(item.surfaceColor[0], item.surfaceColor[1], item.surfaceColor[2]);
+    doc.setDrawColor(item.borderColor[0], item.borderColor[1], item.borderColor[2]);
+    doc.setLineWidth(0.28);
+    doc.roundedRect(x, y, colWidth, boxHeight, 1.8, 1.8, 'FD');
 
-    doc.setFont(activeFont, 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(...COLOR_MUTED);
-    doc.text(item.label.toUpperCase(), x + 2.8, y + 4.8);
+    doc.setFillColor(item.accentColor[0], item.accentColor[1], item.accentColor[2]);
+    doc.roundedRect(x + 0.2, y + 0.2, colWidth - 0.4, 1.2, 0.8, 0.8, 'F');
+
+    drawIconBadge(
+      doc,
+      item.iconName,
+      x + colWidth - 7.6,
+      y + 2.4,
+      5.2,
+      item.accentColor,
+      item.iconBgColor
+    );
+
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(6.6);
+    doc.setTextColor(...COLOR_SLATE);
+    doc.text(item.label.toUpperCase(), x + 2.8, y + 5.1);
 
     doc.setFont(activeFont, 'bold');
     doc.setFontSize(9.8);
     const valColor = item.valueColor || COLOR_INK;
     doc.setTextColor(valColor[0], valColor[1], valColor[2]);
-    doc.text(item.value, x + 2.8, y + 10.4);
+    doc.text(item.value, x + 2.8, y + 10.9);
 
     if (item.subtext) {
       doc.setFont(activeFont, 'normal');
       doc.setFontSize(6.8);
       doc.setTextColor(...COLOR_SLATE);
       const cleanSub =
-        item.subtext.length > 28 ? `${item.subtext.slice(0, 27)}…` : item.subtext;
-      doc.text(cleanSub, x + 2.8, y + 14.4);
+        item.subtext.length > 29 ? `${item.subtext.slice(0, 28)}…` : item.subtext;
+      doc.text(cleanSub, x + 2.8, y + 14.9);
     }
   });
 
-  return y + boxHeight + 4;
+  return y + boxHeight + 3.4;
 }
 
 function drawCompactChartCard(
   doc: any,
   activeFont: string,
   title: string,
-  items: Array<{ label: string; amount: number; count: number; percentage: number }>,
+  headerIcon: string,
+  headerIconColor: [number, number, number],
+  headerIconBg: [number, number, number],
+  items: Array<{
+    label: string;
+    iconName: string;
+    iconStroke: [number, number, number];
+    iconBg: [number, number, number];
+    barColor: [number, number, number];
+    amount: number;
+    count: number;
+    percentage: number;
+  }>,
   x: number,
   y: number,
   width: number,
   fixedHeight?: number
 ): number {
   const maxItems = items.slice(0, 6);
-  const itemHeight = 7.4;
-  const headerH = 7.5;
-  const cardH = fixedHeight || Math.max(24, headerH + maxItems.length * itemHeight + 2.5);
+  const itemHeight = 7.5;
+  const headerH = 8;
+  const cardH = fixedHeight || Math.max(24, headerH + maxItems.length * itemHeight + 2.2);
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.22);
-  doc.roundedRect(x, y, width, cardH, 1.5, 1.5, 'FD');
+  doc.setLineWidth(0.25);
+  doc.roundedRect(x, y, width, cardH, 1.8, 1.8, 'FD');
 
-  // Tiêu đề biểu đồ
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(x + 0.2, y + 0.2, width - 0.4, headerH - 0.4, 1.6, 1.6, 'F');
+
+  drawIconBadge(doc, headerIcon, x + 3, y + 1.7, 4.5, headerIconColor, headerIconBg);
+
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.2);
+  doc.setFontSize(8.1);
   doc.setTextColor(...COLOR_INK);
-  doc.text(title, x + 3.2, y + 5);
+  doc.text(title, x + 8.6, y + 5.1);
 
-  doc.setDrawColor(241, 245, 249);
+  doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.2);
-  doc.line(x + 3.2, y + 6.4, x + width - 3.2, y + 6.4);
+  doc.line(x + 2.5, y + headerH, x + width - 2.5, y + headerH);
 
-  let rowY = y + headerH + 1.2;
-  const trackW = width - 6.4;
+  let rowY = y + headerH + 1.1;
+  const iconSize = 4.2;
+  const textStartX = x + 3 + iconSize + 1.6;
+  const trackW = width - (iconSize + 1.6) - 6;
 
-  maxItems.forEach((item, idx) => {
-    const color = EDITORIAL_BAR_PALETTE[idx % EDITORIAL_BAR_PALETTE.length];
+  maxItems.forEach((item) => {
+    drawIconBadge(doc, item.iconName, x + 3, rowY + 0.5, iconSize, item.iconStroke, item.iconBg);
 
-    // Dòng 1: Nhãn đầy đủ bên trái + Số tiền & tỷ trọng bên phải (không bị cắt cụt ngày)
-    doc.setFont(activeFont, 'normal');
-    doc.setFontSize(7.4);
-    doc.setTextColor(...COLOR_SLATE);
+    // Dòng 1: Tên hạng mục / ngày + số khoản chi
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.3);
+    doc.setTextColor(...COLOR_INK);
     const cleanLabel =
-      item.label.length > 32 ? `${item.label.slice(0, 31)}…` : item.label;
-    doc.text(`${cleanLabel} (${item.count})`, x + 3.2, rowY + 2.6);
+      item.label.length > 28 ? `${item.label.slice(0, 27)}…` : item.label;
+    doc.text(`${cleanLabel} • ${item.count} khoản`, textStartX, rowY + 2.6);
 
     doc.setFont(activeFont, 'bold');
-    doc.setFontSize(7.4);
-    doc.setTextColor(...COLOR_INK);
+    doc.setFontSize(7.3);
+    doc.setTextColor(item.iconStroke[0], item.iconStroke[1], item.iconStroke[2]);
     doc.text(
       `${formatVND(item.amount, false)} đ (${item.percentage}%)`,
-      x + width - 3.2,
+      x + width - 3,
       rowY + 2.6,
       { align: 'right' }
     );
 
-    // Dòng 2: Thanh tiến độ mảnh tinh tế
+    // Dòng 2: Thanh progress bar bo tròn sống động
     doc.setFillColor(241, 245, 249);
-    doc.roundedRect(x + 3.2, rowY + 3.8, trackW, 1.8, 0.7, 0.7, 'F');
+    doc.roundedRect(textStartX, rowY + 3.8, trackW, 2, 0.8, 0.8, 'F');
 
     const ratio = Math.max(0, Math.min(1, item.percentage / 100));
-    const fillW = Math.max(ratio > 0 ? 1.5 : 0, trackW * ratio);
+    const fillW = Math.max(ratio > 0 ? 1.8 : 0, trackW * ratio);
     if (fillW > 0) {
-      doc.setFillColor(color[0], color[1], color[2]);
-      doc.roundedRect(x + 3.2, rowY + 3.8, fillW, 1.8, 0.7, 0.7, 'F');
+      doc.setFillColor(item.barColor[0], item.barColor[1], item.barColor[2]);
+      doc.roundedRect(textStartX, rowY + 3.8, fillW, 2, 0.8, 0.8, 'F');
     }
 
     rowY += itemHeight;
@@ -860,7 +1265,7 @@ function drawSideBySideOverviewCharts(
     Math.min(6, byDay.length),
     1
   );
-  const sharedHeight = 7.5 + maxRows * 7.4 + 2.5;
+  const sharedHeight = 8 + maxRows * 7.5 + 2.2;
   const y = ensurePageSpace(doc, cursorY, sharedHeight + 4);
 
   const gap = 4;
@@ -870,13 +1275,23 @@ function drawSideBySideOverviewCharts(
   drawCompactChartCard(
     doc,
     activeFont,
-    'Biểu đồ 1. Cơ cấu theo Danh mục',
-    byCategory.map((c) => ({
-      label: shortenCategoryLabelForTable(c.categoryName),
-      amount: c.amount,
-      count: c.count,
-      percentage: c.percentage,
-    })),
+    'Cơ cấu theo Hạng mục',
+    'PieChart',
+    [13, 148, 136],
+    [204, 251, 241],
+    byCategory.map((c) => {
+      const theme = CATEGORY_THEME_MAP[c.categoryIcon] || CATEGORY_THEME_MAP.Package;
+      return {
+        label: shortenCategoryLabelForTable(c.categoryName),
+        iconName: c.categoryIcon || 'Package',
+        iconStroke: theme.stroke,
+        iconBg: theme.bg,
+        barColor: theme.bar,
+        amount: c.amount,
+        count: c.count,
+        percentage: c.percentage,
+      };
+    }),
     marginX,
     y,
     colW,
@@ -886,20 +1301,30 @@ function drawSideBySideOverviewCharts(
   drawCompactChartCard(
     doc,
     activeFont,
-    'Biểu đồ 2. Tiến độ chi tiêu theo Ngày',
-    byDay.map((d) => ({
-      label: d.label,
-      amount: d.amount,
-      count: d.count,
-      percentage: d.percentage,
-    })),
+    'Tiến độ theo Ngày',
+    'Calendar',
+    [37, 99, 235],
+    [219, 234, 254],
+    byDay.map((d, idx) => {
+      const barCol = DAY_BAR_PALETTE[idx % DAY_BAR_PALETTE.length];
+      return {
+        label: d.label.replace(/\s*\((\d{2}\/\d{2})\/\d{4}\)/, ' ($1)'),
+        iconName: 'Calendar',
+        iconStroke: barCol,
+        iconBg: [241, 245, 249],
+        barColor: barCol,
+        amount: d.amount,
+        count: d.count,
+        percentage: d.percentage,
+      };
+    }),
     marginX + colW + gap,
     y,
     colW,
     sharedHeight
   );
 
-  return y + sharedHeight + 4.5;
+  return y + sharedHeight + 3.8;
 }
 
 function drawMemberBalanceComparisonChart(
@@ -912,102 +1337,127 @@ function drawMemberBalanceComparisonChart(
 ): number {
   if (balances.length === 0) return cursorY;
 
-  const rowHeight = 7.8;
+  const rowHeight = 7.4;
   const headerHeight = 8;
-  const totalBoxHeight = headerHeight + balances.length * rowHeight + 2.5;
+  const totalBoxHeight = headerHeight + balances.length * rowHeight + 2.2;
 
   const y = ensurePageSpace(doc, cursorY, totalBoxHeight + 3);
   const fullWidth = pageWidth - marginX * 2;
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.22);
-  doc.roundedRect(marginX, y, fullWidth, totalBoxHeight, 1.5, 1.5, 'FD');
+  doc.setLineWidth(0.25);
+  doc.roundedRect(marginX, y, fullWidth, totalBoxHeight, 1.8, 1.8, 'FD');
+
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(marginX + 0.2, y + 0.2, fullWidth - 0.4, headerHeight - 0.4, 1.6, 1.6, 'F');
+  drawIconBadge(doc, 'ArrowRightLeft', marginX + 3, y + 1.7, 4.5, [13, 148, 136], [204, 251, 241]);
 
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.2);
+  doc.setFontSize(8.1);
   doc.setTextColor(...COLOR_INK);
-  doc.text('Tương quan Đã chi trả vs. Phần phải chịu theo Thành viên', marginX + 3.5, y + 5.2);
+  doc.text('So sánh Đã chi & Phải chịu theo Thành viên', marginX + 8.6, y + 5.1);
 
-  // Chú thích (Legend) tinh gọn
   const legendRightX = marginX + fullWidth - 3.5;
-  doc.setFont(activeFont, 'normal');
-  doc.setFontSize(7.2);
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(7.1);
 
   doc.setFillColor(...COLOR_TEAL);
-  doc.rect(legendRightX - 58, y + 2.7, 2.6, 2.6, 'F');
+  doc.roundedRect(legendRightX - 54, y + 2.7, 2.8, 2.8, 0.5, 0.5, 'F');
   doc.setTextColor(...COLOR_SLATE);
-  doc.text('Đã chi trả', legendRightX - 54, y + 4.9);
+  doc.text('Đã chi', legendRightX - 50, y + 4.9);
 
-  doc.setFillColor(148, 163, 184); // Slate 400 (thân thiện khi in trắng đen lẫn in màu)
-  doc.rect(legendRightX - 28, y + 2.7, 2.6, 2.6, 'F');
+  doc.setFillColor(148, 163, 184);
+  doc.roundedRect(legendRightX - 28, y + 2.7, 2.8, 2.8, 0.5, 0.5, 'F');
   doc.text('Phải chịu', legendRightX - 24, y + 4.9);
 
-  doc.setDrawColor(241, 245, 249);
+  doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.2);
-  doc.line(marginX + 3.5, y + 6.8, marginX + fullWidth - 3.5, y + 6.8);
+  doc.line(marginX + 2.5, y + headerHeight, marginX + fullWidth - 2.5, y + headerHSpacer(headerHeight));
 
   const maxVal = Math.max(
     1,
     ...balances.map((b) => Math.max(b.paidExpense, b.owedExpense))
   );
 
-  let rowY = y + headerHeight + 0.8;
-  const nameColWidth = 30;
+  let rowY = y + headerHeight + 0.9;
+  const nameColWidth = 34;
   const statusColWidth = 42;
   const barTrackX = marginX + 3.5 + nameColWidth;
   const barTrackWidth = fullWidth - 7 - nameColWidth - statusColWidth;
 
   balances.forEach((b) => {
+    const avatarRgb = hexToRgb(b.avatarColor, [13, 148, 136]);
+    doc.setFillColor(avatarRgb[0], avatarRgb[1], avatarRgb[2]);
+    doc.circle(marginX + 5.6, rowY + 3.1, 2.2, 'F');
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(6.3);
+    doc.setTextColor(255, 255, 255);
+    const initial = (b.memberName || '?').trim().charAt(0).toUpperCase();
+    doc.text(initial, marginX + 5.6, rowY + 3.85, { align: 'center' });
+
     doc.setFont(activeFont, 'bold');
     doc.setFontSize(7.8);
     doc.setTextColor(...COLOR_INK);
-    const shortName = b.memberName.length > 16 ? `${b.memberName.slice(0, 15)}…` : b.memberName;
-    doc.text(shortName, marginX + 3.5, rowY + 3.8);
+    const shortName = b.memberName.length > 15 ? `${b.memberName.slice(0, 14)}…` : b.memberName;
+    doc.text(shortName, marginX + 9.2, rowY + 3.9);
 
     // Thanh 1: Đã chi (Teal 600)
     doc.setFillColor(241, 245, 249);
-    doc.roundedRect(barTrackX, rowY + 0.7, barTrackWidth, 2.1, 0.6, 0.6, 'F');
+    doc.roundedRect(barTrackX, rowY + 0.8, barTrackWidth, 2, 0.7, 0.7, 'F');
     const paidW = Math.max(
-      b.paidExpense > 0 ? 1.2 : 0,
+      b.paidExpense > 0 ? 1.5 : 0,
       (b.paidExpense / maxVal) * barTrackWidth
     );
     if (paidW > 0) {
       doc.setFillColor(...COLOR_TEAL);
-      doc.roundedRect(barTrackX, rowY + 0.7, paidW, 2.1, 0.6, 0.6, 'F');
+      doc.roundedRect(barTrackX, rowY + 0.8, paidW, 2, 0.7, 0.7, 'F');
     }
 
     // Thanh 2: Phải chịu (Slate 400)
     doc.setFillColor(241, 245, 249);
-    doc.roundedRect(barTrackX, rowY + 3.5, barTrackWidth, 2.1, 0.6, 0.6, 'F');
+    doc.roundedRect(barTrackX, rowY + 3.4, barTrackWidth, 2, 0.7, 0.7, 'F');
     const owedW = Math.max(
-      b.owedExpense > 0 ? 1.2 : 0,
+      b.owedExpense > 0 ? 1.5 : 0,
       (b.owedExpense / maxVal) * barTrackWidth
     );
     if (owedW > 0) {
       doc.setFillColor(148, 163, 184);
-      doc.roundedRect(barTrackX, rowY + 3.5, owedW, 2.1, 0.6, 0.6, 'F');
+      doc.roundedRect(barTrackX, rowY + 3.4, owedW, 2, 0.7, 0.7, 'F');
     }
 
-    // Số dư cuối bên phải
-    doc.setFont(activeFont, 'bold');
-    doc.setFontSize(7.8);
+    // Pill Số dư cuối bên phải
     let balLabel = '0 đ';
+    let pillBg: [number, number, number] = [241, 245, 249];
+    let pillText: [number, number, number] = COLOR_MUTED;
     if (b.balance > 0) {
-      doc.setTextColor(...COLOR_TEAL_DARK);
+      pillBg = [209, 250, 229];
+      pillText = COLOR_TEAL_DARK;
       balLabel = `+${formatVND(b.balance, false)} đ`;
     } else if (b.balance < 0) {
-      doc.setTextColor(...COLOR_ROSE);
+      pillBg = [255, 228, 230];
+      pillText = COLOR_ROSE_DARK;
       balLabel = `${formatVND(b.balance, false)} đ`;
-    } else {
-      doc.setTextColor(...COLOR_MUTED);
     }
-    doc.text(balLabel, marginX + fullWidth - 3.5, rowY + 3.9, { align: 'right' });
+
+    const pillW = 31;
+    const pillX = marginX + fullWidth - 3.2 - pillW;
+    doc.setFillColor(pillBg[0], pillBg[1], pillBg[2]);
+    doc.roundedRect(pillX, rowY + 0.6, pillW, 4.9, 1.2, 1.2, 'F');
+
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.4);
+    doc.setTextColor(pillText[0], pillText[1], pillText[2]);
+    doc.text(balLabel, marginX + fullWidth - 4.8, rowY + 3.95, { align: 'right' });
 
     rowY += rowHeight;
   });
 
-  return y + totalBoxHeight + 3.5;
+  return y + totalBoxHeight + 3.2;
+}
+
+function headerHSpacer(h: number): number {
+  return h;
 }
 
 function renderMemberAppendixSection(
@@ -1024,53 +1474,86 @@ function renderMemberAppendixSection(
   let cursorY = startCursorY;
   const fullWidth = pageWidth - marginX * 2;
 
-  // Masthead gọn cho trang Phụ lục cá nhân
-  doc.setFillColor(...COLOR_INK);
-  doc.rect(marginX, cursorY, fullWidth * 0.75, 0.9, 'F');
-  doc.setFillColor(...COLOR_TEAL);
-  doc.rect(marginX + fullWidth * 0.75, cursorY, fullWidth * 0.25, 0.9, 'F');
-  cursorY += 4.5;
+  // Hero Header cho trang Phụ lục cá nhân
+  const bannerH = 18.5;
+  doc.setFillColor(...COLOR_HERO_DARK);
+  doc.roundedRect(marginX, cursorY, fullWidth, bannerH, 2.2, 2.2, 'F');
+
+  const avatarRgb = hexToRgb(appendix.avatarColor, [13, 148, 136]);
+  doc.setFillColor(avatarRgb[0], avatarRgb[1], avatarRgb[2]);
+  doc.roundedRect(marginX, cursorY, fullWidth, 1.4, 0.8, 0.8, 'F');
+
+  doc.setFillColor(avatarRgb[0], avatarRgb[1], avatarRgb[2]);
+  doc.circle(marginX + 8.5, cursorY + 10, 4.6, 'F');
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(10.8);
+  doc.setTextColor(255, 255, 255);
+  doc.text(
+    (appendix.memberName || '?').trim().charAt(0).toUpperCase(),
+    marginX + 8.5,
+    cursorY + 11.3,
+    { align: 'center' }
+  );
 
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(7.5);
-  doc.setTextColor(...COLOR_TEAL);
-  doc.text(`${badgeLabel}  •  ${report.tripName.toUpperCase()}`, marginX, cursorY);
+  doc.setFontSize(7.1);
+  doc.setTextColor(...COLOR_EMERALD_BRIGHT);
+  doc.text(`${badgeLabel}  •  ${report.tripName.toUpperCase()}`, marginX + 16, cursorY + 6.3);
+
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(13.2);
+  doc.setTextColor(255, 255, 255);
+  doc.text(
+    `QUYẾT TOÁN CÁ NHÂN: ${appendix.memberName.toUpperCase()}`,
+    marginX + 16,
+    cursorY + 13.5
+  );
 
   if (appendix.bankInfo) {
-    doc.setFont(activeFont, 'normal');
-    doc.setFontSize(7.5);
-    doc.setTextColor(...COLOR_SLATE);
-    doc.text(`TK cá nhân: ${appendix.bankInfo}`, pageWidth - marginX, cursorY, {
-      align: 'right',
-    });
+    doc.setFillColor(...COLOR_HERO_CARD);
+    doc.setDrawColor(51, 65, 85);
+    doc.setLineWidth(0.2);
+    const bankText = `TK cá nhân: ${appendix.bankInfo}`;
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.4);
+    const bw = Math.min(78, doc.getTextWidth(bankText) + 6);
+    doc.roundedRect(pageWidth - marginX - bw - 3, cursorY + 5.2, bw, 8, 1.5, 1.5, 'FD');
+    doc.setTextColor(226, 232, 240);
+    doc.text(bankText, pageWidth - marginX - 6, cursorY + 10.2, { align: 'right' });
   }
 
-  cursorY += 5.5;
-  doc.setFont(activeFont, 'bold');
-  doc.setFontSize(13.5);
-  doc.setTextColor(...COLOR_INK);
-  doc.text(`THỐNG KÊ & QUYẾT TOÁN: ${appendix.memberName.toUpperCase()}`, marginX, cursorY);
-
-  cursorY += 3;
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.2);
-  doc.line(marginX, cursorY, pageWidth - marginX, cursorY);
-  cursorY += 3.5;
+  cursorY += bannerH + 3.5;
 
   // 4 ô KPI cá nhân
-  const balanceColor: [number, number, number] =
-    appendix.balance > 0
-      ? COLOR_TEAL_DARK
-      : appendix.balance < 0
-        ? COLOR_ROSE
-        : COLOR_SLATE;
-  const balanceStatusText =
-    appendix.balance > 0
-      ? 'Được nhận lại cuối kỳ'
-      : appendix.balance < 0
-        ? 'Cần chuyển thanh toán'
-        : 'Đã tất toán cân bằng';
-  const balPrefix = appendix.balance > 0 ? '+' : '';
+  const isPositive = appendix.balance > 0;
+  const isNegative = appendix.balance < 0;
+  const balanceAccent: [number, number, number] = isPositive
+    ? COLOR_TEAL_DARK
+    : isNegative
+      ? COLOR_ROSE_DARK
+      : COLOR_SLATE;
+  const balanceSurface: [number, number, number] = isPositive
+    ? [240, 253, 250]
+    : isNegative
+      ? [255, 241, 242]
+      : [248, 250, 252];
+  const balanceBorder: [number, number, number] = isPositive
+    ? [153, 246, 228]
+    : isNegative
+      ? [254, 205, 211]
+      : [226, 232, 240];
+  const balanceIconBg: [number, number, number] = isPositive
+    ? [204, 251, 241]
+    : isNegative
+      ? [255, 228, 230]
+      : [226, 232, 240];
+
+  const balanceStatusText = isPositive
+    ? 'Được nhận về cuối kỳ'
+    : isNegative
+      ? 'Cần chuyển thanh toán'
+      : 'Đã tất toán cân bằng';
+  const balPrefix = isPositive ? '+' : '';
 
   const hasMemberTransfers =
     appendix.sentTransfer > 0 || appendix.receivedTransfer > 0;
@@ -1084,43 +1567,63 @@ function renderMemberAppendixSection(
     activeFont,
     [
       {
-        label: 'Tổng đã đứng ra chi',
+        label: 'Đã đứng ra chi',
         value: `${formatVND(appendix.paidExpense, false)} đ`,
-        subtext: `${appendix.paidRows.filter((r) => r.recordType === 'expense').length} khoản chi (${shareRatioPct}% tổng đoàn)`,
+        subtext: `${appendix.paidRows.filter((r) => r.recordType === 'expense').length} khoản (${shareRatioPct}% tổng đoàn)`,
+        iconName: 'Wallet',
         accentColor: COLOR_TEAL,
+        surfaceColor: [240, 253, 250],
+        borderColor: [153, 246, 228],
+        iconBgColor: [204, 251, 241],
         valueColor: COLOR_TEAL_DARK,
       },
       {
-        label: 'Tổng phần phải chịu',
+        label: 'Phần phải chịu',
         value: `${formatVND(appendix.owedExpense, false)} đ`,
-        subtext: `${appendix.participatedRows.filter((r) => r.recordType === 'expense').length} khoản tham gia thụ hưởng`,
-        accentColor: COLOR_SLATE,
+        subtext: `${appendix.participatedRows.filter((r) => r.recordType === 'expense').length} khoản thụ hưởng`,
+        iconName: 'Users',
+        accentColor: [37, 99, 235],
+        surfaceColor: [239, 246, 255],
+        borderColor: [191, 219, 254],
+        iconBgColor: [219, 234, 254],
         valueColor: COLOR_INK,
       },
       hasMemberTransfers
         ? {
-            label: 'Chuyển khoản ròng',
+            label: 'Chuyển trả ròng',
             value: `${formatVND(appendix.netTransfer, false)} đ`,
             subtext: `Chuyển ${formatVND(appendix.sentTransfer, false)} / Nhận ${formatVND(appendix.receivedTransfer, false)}`,
-            accentColor: COLOR_SLATE,
+            iconName: 'ArrowRightLeft',
+            accentColor: [124, 58, 237],
+            surfaceColor: [245, 243, 255],
+            borderColor: [221, 214, 254],
+            iconBgColor: [237, 233, 254],
             valueColor: COLOR_INK,
           }
         : {
-            label: 'Số lệnh tất toán cuối',
+            label: 'Lệnh tất toán',
             value: `${appendix.finalSettlementActions.length} giao dịch`,
             subtext:
               appendix.finalSettlementActions.length > 0
-                ? 'Theo phương án tối ưu dòng tiền'
-                : 'Không phát sinh giao dịch',
-            accentColor: COLOR_SLATE,
+                ? 'Tối ưu dòng tiền'
+                : 'Không phát sinh',
+            iconName: 'Send',
+            accentColor: [124, 58, 237],
+            surfaceColor: [245, 243, 255],
+            borderColor: [221, 214, 254],
+            iconBgColor: [237, 233, 254],
             valueColor: COLOR_INK,
           },
       {
-        label: 'Số dư quyết toán cuối',
+        label: 'Số dư cuối kỳ',
         value: `${balPrefix}${formatVND(appendix.balance, false)} đ`,
         subtext: balanceStatusText,
-        accentColor: balanceColor,
-        valueColor: balanceColor,
+        iconName: 'CheckCircle',
+        accentColor: balanceAccent,
+        surfaceColor: balanceSurface,
+        borderColor: balanceBorder,
+        iconBgColor: balanceIconBg,
+        valueColor: balanceAccent,
       },
     ],
     marginX,
@@ -1129,97 +1632,233 @@ function renderMemberAppendixSection(
   );
 
   // Bố cục 2 cột song song:
-  // - Cột trái: Khung Lệnh Thanh Toán Quyết Toán Cuối Cùng
-  // - Cột phải: Biểu đồ cơ cấu chi tiêu thụ hưởng theo Danh mục của cá nhân
+  // - Cột trái: Khung KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN
+  // - Cột phải: Biểu đồ Cơ cấu thụ hưởng theo Hạng mục
   const gap = 4;
   const leftColW = fullWidth * 0.48;
   const rightColW = fullWidth - leftColW - gap;
 
   const actions = appendix.finalSettlementActions;
-  const catCount = Math.min(5, appendix.byCategory.length);
-  const rightChartH = catCount > 0 ? 7.5 + catCount * 7.4 + 2.5 : 22;
-  const leftMinH = Math.max(22, 10 + Math.max(1, actions.length) * 6);
+  const catCount = Math.min(6, appendix.byCategory.length);
+  const rightChartH = catCount > 0 ? 8 + catCount * 7.5 + 2.2 : 24;
+  const leftMinH = Math.max(26, 12 + Math.max(1, actions.length) * 8 + 8);
   const blockH = Math.max(rightChartH, leftMinH);
 
   cursorY = ensurePageSpace(doc, cursorY, blockH + 4);
 
-  // Vẽ Cột trái: Khung Kết luận Quyết toán của cá nhân
-  doc.setFillColor(...COLOR_SURFACE);
-  doc.setDrawColor(...COLOR_BORDER);
-  doc.setLineWidth(0.22);
-  doc.roundedRect(marginX, cursorY, leftColW, blockH, 1.5, 1.5, 'FD');
+  // Vẽ Cột trái: Khung Kết quả Chuyển khoản Quyết toán nổi bật
+  doc.setFillColor(255, 255, 255);
+  doc.setDrawColor(isNegative ? 254 : 153, isNegative ? 205 : 246, isNegative ? 211 : 228);
+  doc.setLineWidth(0.3);
+  doc.roundedRect(marginX, cursorY, leftColW, blockH, 1.8, 1.8, 'FD');
 
-  const leftBarColor =
-    appendix.balance < 0
-      ? COLOR_ROSE
-      : appendix.balance > 0
-        ? COLOR_TEAL_DARK
-        : COLOR_SLATE;
+  doc.setFillColor(isNegative ? 255 : 240, isNegative ? 241 : 253, isNegative ? 242 : 250);
+  doc.roundedRect(marginX + 0.2, cursorY + 0.2, leftColW - 0.4, 7.8, 1.6, 1.6, 'F');
+
+  const leftBarColor = isNegative ? COLOR_ROSE : isPositive ? COLOR_TEAL_DARK : COLOR_SLATE;
   doc.setFillColor(...leftBarColor);
   doc.roundedRect(marginX, cursorY, 2.2, blockH, 1, 1, 'F');
 
+  drawIconBadge(
+    doc,
+    'Send',
+    marginX + 4.2,
+    cursorY + 1.7,
+    4.5,
+    leftBarColor,
+    isNegative ? [255, 228, 230] : [204, 251, 241]
+  );
+
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.2);
+  doc.setFontSize(8.1);
   doc.setTextColor(...COLOR_INK);
-  doc.text('LỆNH THANH TOÁN QUYẾT TOÁN CUỐI CÙNG', marginX + 5, cursorY + 5.2);
+  doc.text('KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN', marginX + 9.8, cursorY + 5.1);
 
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.2);
-  doc.line(marginX + 5, cursorY + 6.6, marginX + leftColW - 3.5, cursorY + 6.6);
+  doc.line(marginX + 4, cursorY + 8, marginX + leftColW - 3.5, cursorY + 8);
 
   if (actions.length === 0) {
     doc.setFont(activeFont, 'normal');
     doc.setFontSize(7.8);
     doc.setTextColor(...COLOR_SLATE);
     doc.text(
-      `${appendix.memberName} đã cân bằng công nợ, không cần chuyển hoặc nhận thêm.`,
+      `${appendix.memberName} đã cân bằng công nợ, không cần chuyển thêm.`,
       marginX + 5,
-      cursorY + 12.5
+      cursorY + 14.5
     );
+  } else if (actions.length === 1) {
+    // Khi chỉ có 1 giao dịch quyết toán: Vẽ thẻ Callout nổi bật để làm tâm điểm trực quan
+    const act = actions[0];
+    const isSender = act.fromMemberId === appendix.memberId;
+    const subCardX = marginX + 4.5;
+    const subCardY = cursorY + 10.5;
+    const subCardW = leftColW - 8;
+    const subCardH = act.toBankInfo && isSender ? 18.5 : 13.5;
+
+    doc.setFillColor(isSender ? 255 : 240, isSender ? 241 : 253, isSender ? 242 : 250);
+    doc.setDrawColor(isSender ? 254 : 153, isSender ? 205 : 246, isSender ? 211 : 228);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(subCardX, subCardY, subCardW, subCardH, 1.5, 1.5, 'FD');
+
+    if (isSender) {
+      drawTransferPairWithArrow(
+        doc,
+        activeFont,
+        'bold',
+        9.2,
+        appendix.memberName,
+        act.toMemberName,
+        subCardX + 3.2,
+        subCardY + 6.2,
+        COLOR_ROSE_DARK,
+        COLOR_ROSE,
+        COLOR_INK
+      );
+
+      doc.setFont(activeFont, 'bold');
+      doc.setFontSize(9.8);
+      doc.setTextColor(...COLOR_ROSE_DARK);
+      doc.text(
+        `${formatVND(act.amount, false)} đ`,
+        subCardX + subCardW - 3.2,
+        subCardY + 6.2,
+        { align: 'right' }
+      );
+
+      if (act.toBankInfo) {
+        doc.setFont(activeFont, 'bold');
+        doc.setFontSize(7.4);
+        doc.setTextColor(...COLOR_SLATE);
+        doc.text(`TK nhận: ${act.toBankInfo}`, subCardX + 3.2, subCardY + 13.2);
+      }
+    } else {
+      drawTransferPairWithArrow(
+        doc,
+        activeFont,
+        'bold',
+        9.2,
+        act.fromMemberName,
+        appendix.memberName,
+        subCardX + 3.2,
+        subCardY + 7.5,
+        COLOR_INK,
+        COLOR_TEAL,
+        COLOR_TEAL_DARK
+      );
+
+      doc.setFont(activeFont, 'bold');
+      doc.setFontSize(9.8);
+      doc.setTextColor(...COLOR_TEAL_DARK);
+      doc.text(
+        `+${formatVND(act.amount, false)} đ`,
+        subCardX + subCardW - 3.2,
+        subCardY + 7.5,
+        { align: 'right' }
+      );
+    }
   } else {
-    let actY = cursorY + 11.2;
+    let actY = cursorY + 12.8;
     actions.forEach((act) => {
       const isSender = act.fromMemberId === appendix.memberId;
-      doc.setFont(activeFont, 'bold');
-      doc.setFontSize(8);
+
       if (isSender) {
-        doc.setTextColor(...COLOR_ROSE);
-        doc.text(
-          `• Chuyển cho ${act.toMemberName}: ${formatVND(act.amount, false)} đ`,
+        drawTransferPairWithArrow(
+          doc,
+          activeFont,
+          'bold',
+          8.4,
+          appendix.memberName,
+          act.toMemberName,
           marginX + 5,
-          actY
+          actY,
+          COLOR_ROSE_DARK,
+          COLOR_ROSE,
+          COLOR_INK
         );
+
+        doc.setFont(activeFont, 'bold');
+        doc.setFontSize(8.6);
+        doc.setTextColor(...COLOR_ROSE_DARK);
+        doc.text(
+          `${formatVND(act.amount, false)} đ`,
+          marginX + leftColW - 4,
+          actY,
+          { align: 'right' }
+        );
+
         if (act.toBankInfo) {
-          actY += 3.8;
+          actY += 4.2;
           doc.setFont(activeFont, 'normal');
           doc.setFontSize(7.2);
           doc.setTextColor(...COLOR_SLATE);
-          doc.text(`   TK nhận: ${act.toBankInfo}`, marginX + 5, actY);
+          doc.text(`TK nhận: ${act.toBankInfo}`, marginX + 5, actY);
         }
       } else {
+        drawTransferPairWithArrow(
+          doc,
+          activeFont,
+          'bold',
+          8.2,
+          act.fromMemberName,
+          appendix.memberName,
+          marginX + 5,
+          actY,
+          COLOR_INK,
+          COLOR_TEAL,
+          COLOR_TEAL_DARK
+        );
+
+        doc.setFont(activeFont, 'bold');
+        doc.setFontSize(8.4);
         doc.setTextColor(...COLOR_TEAL_DARK);
         doc.text(
-          `• Nhận từ ${act.fromMemberName}: +${formatVND(act.amount, false)} đ`,
-          marginX + 5,
-          actY
+          `+${formatVND(act.amount, false)} đ`,
+          marginX + leftColW - 4,
+          actY,
+          { align: 'right' }
         );
       }
-      actY += 5.2;
+      actY += 5.8;
     });
   }
 
-  // Vẽ Cột phải: Biểu đồ cơ cấu chi tiêu cá nhân theo Danh mục
+  // Dòng công thức đối chiếu nhanh dưới đáy hộp Quyết toán cá nhân (dùng dấu '-' chuẩn ASCII)
+  const formulaY = cursorY + blockH - 3.2;
+  doc.setDrawColor(226, 232, 240);
+  doc.setLineWidth(0.18);
+  doc.line(marginX + 4.5, formulaY - 3.8, marginX + leftColW - 3.5, formulaY - 3.8);
+  doc.setFont(activeFont, 'normal');
+  doc.setFontSize(6.8);
+  doc.setTextColor(...COLOR_MUTED);
+  doc.text(
+    `Đối chiếu: Đã chi (${formatVND(appendix.paidExpense, false)}) - Phải chịu (${formatVND(appendix.owedExpense, false)}) = ${balPrefix}${formatVND(appendix.balance, false)} đ`,
+    marginX + 4.8,
+    formulaY
+  );
+
+  // Vẽ Cột phải: Biểu đồ Cơ cấu thụ hưởng theo Hạng mục kèm Icon
   if (appendix.byCategory.length > 0) {
     drawCompactChartCard(
       doc,
       activeFont,
-      `Cơ cấu thụ hưởng của ${appendix.memberName} theo Danh mục`,
-      appendix.byCategory.slice(0, 5).map((c) => ({
-        label: shortenCategoryLabelForTable(c.categoryName),
-        amount: c.amount,
-        count: c.count,
-        percentage: c.percentage,
-      })),
+      `Thụ hưởng theo Hạng mục (${appendix.memberName})`,
+      'PieChart',
+      [13, 148, 136],
+      [204, 251, 241],
+      appendix.byCategory.slice(0, 6).map((c) => {
+        const theme = CATEGORY_THEME_MAP[c.categoryIcon] || CATEGORY_THEME_MAP.Package;
+        return {
+          label: shortenCategoryLabelForTable(c.categoryName),
+          iconName: c.categoryIcon || 'Package',
+          iconStroke: theme.stroke,
+          iconBg: theme.bg,
+          barColor: theme.bar,
+          amount: c.amount,
+          count: c.count,
+          percentage: c.percentage,
+        };
+      }),
       marginX + leftColW + gap,
       cursorY,
       rightColW,
@@ -1229,17 +1868,17 @@ function renderMemberAppendixSection(
 
   cursorY += blockH + 4.5;
 
-  // Bảng 1: Các khoản cá nhân đã trực tiếp chi trả / chuyển khoản
+  // Bảng các khoản thành viên đã trực tiếp chi trả
   cursorY = ensurePageSpace(doc, cursorY, 20);
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.8);
+  doc.setFontSize(8.6);
   doc.setTextColor(...COLOR_INK);
   doc.text(
-    `1. Các khoản ${appendix.memberName} đã trực tiếp đứng ra chi trả (${appendix.paidRows.length} mục)`,
+    `CÁC KHOẢN ${appendix.memberName.toUpperCase()} ĐÃ TRỰC TIẾP CHI TRẢ (${appendix.paidRows.length} KHOẢN)`,
     marginX,
     cursorY + 3
   );
-  cursorY += 4.5;
+  cursorY += 4.2;
 
   if (typeof autoTableFn === 'function') {
     const paidBody = appendix.paidRows.map((r, i) => [
@@ -1255,7 +1894,16 @@ function renderMemberAppendixSection(
       startY: cursorY,
       showFoot: 'lastPage',
       rowPageBreak: 'avoid',
-      head: [['#', 'Thời gian', 'Nội dung khoản chi', 'Phạm vi thụ hưởng', 'Hạng mục', 'Số tiền đã chi (đ)']],
+      head: [
+        [
+          { content: '#', styles: { halign: 'center' } },
+          'Thời gian',
+          'Nội dung khoản chi',
+          'Phạm vi',
+          'Hạng mục',
+          { content: 'Số tiền đã chi (đ)', styles: { halign: 'right' } },
+        ],
+      ],
       body:
         paidBody.length > 0
           ? paidBody
@@ -1264,143 +1912,84 @@ function renderMemberAppendixSection(
         paidBody.length > 0
           ? [
               [
-                '',
-                '',
-                'Tổng cộng đã trực tiếp chi trả',
-                '',
-                '',
-                formatVND(appendix.paidExpense, false),
+                {
+                  content: `TỔNG CỘNG ĐÃ TRỰC TIẾP CHI TRẢ (${appendix.paidRows.length} khoản)`,
+                  colSpan: 5,
+                  styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_INK },
+                },
+                {
+                  content: formatVND(appendix.paidExpense, false),
+                  styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_TEAL_DARK },
+                },
               ],
             ]
           : undefined,
-      margin: { left: marginX, right: marginX, bottom: 15 },
+      margin: { left: marginX, right: marginX, bottom: 14 },
       styles: {
         font: activeFont,
         fontSize: 7.8,
-        cellPadding: 1.6,
+        cellPadding: 1.65,
         textColor: COLOR_INK,
         lineColor: COLOR_BORDER,
-        lineWidth: 0.1,
+        lineWidth: 0.12,
         valign: 'middle',
       },
       headStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: [241, 245, 249],
-        textColor: COLOR_INK,
-        lineColor: [203, 213, 225],
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        lineColor: [30, 41, 59],
         lineWidth: 0.15,
       },
       footStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: [248, 250, 252],
+        fillColor: [240, 253, 250],
         textColor: COLOR_TEAL_DARK,
+        lineColor: [153, 246, 228],
+        lineWidth: 0.2,
         halign: 'right',
       },
-      alternateRowStyles: { fillColor: [252, 253, 254] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
-        0: { cellWidth: 8, halign: 'center', textColor: COLOR_MUTED },
+        0: { cellWidth: 9, halign: 'center', textColor: COLOR_MUTED },
         1: { cellWidth: 27 },
         2: { cellWidth: 'auto' },
-        3: { cellWidth: 38, textColor: COLOR_SLATE },
-        4: { cellWidth: 25, textColor: COLOR_SLATE },
-        5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
-      },
-    });
-    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 10) + 5;
-  }
-
-  // Bảng 2: Chi tiết các khoản cá nhân tham gia thụ hưởng
-  cursorY = ensurePageSpace(doc, cursorY, 20);
-  doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.8);
-  doc.setTextColor(...COLOR_INK);
-  doc.text(
-    `2. Chi tiết các khoản ${appendix.memberName} tham gia thụ hưởng (${appendix.participatedRows.length} mục)`,
-    marginX,
-    cursorY + 3
-  );
-  cursorY += 4.5;
-
-  if (typeof autoTableFn === 'function') {
-    const partBody = appendix.participatedRows.map((r, i) => [
-      `${i + 1}`,
-      r.date,
-      r.title,
-      r.payerName,
-      r.compactTypeLabel,
-      r.amountFormatted,
-      r.memberShareFormatted || '0',
-    ]);
-
-    autoTableFn.call(doc, {
-      startY: cursorY,
-      showFoot: 'lastPage',
-      rowPageBreak: 'avoid',
-      head: [
-        [
-          '#',
-          'Thời gian',
-          'Nội dung khoản chi',
-          'Người trả',
-          'Hạng mục',
-          'Tổng hóa đơn (đ)',
-          `Phần của ${appendix.memberName} (đ)`,
-        ],
-      ],
-      body:
-        partBody.length > 0
-          ? partBody
-          : [['—', '—', 'Chưa tham gia khoản chi nào', '—', '—', '0', '0']],
-      foot:
-        partBody.length > 0
-          ? [
-              [
-                '',
-                '',
-                `Tổng phần chi phí phải chịu của ${appendix.memberName}`,
-                '',
-                '',
-                '',
-                formatVND(appendix.owedExpense, false),
-              ],
-            ]
-          : undefined,
-      margin: { left: marginX, right: marginX, bottom: 15 },
-      styles: {
-        font: activeFont,
-        fontSize: 7.8,
-        cellPadding: 1.55,
-        textColor: COLOR_INK,
-        lineColor: COLOR_BORDER,
-        lineWidth: 0.1,
-        valign: 'middle',
-      },
-      headStyles: {
-        font: activeFont,
-        fontStyle: 'bold',
-        fillColor: [241, 245, 249],
-        textColor: COLOR_INK,
-        lineColor: [203, 213, 225],
-        lineWidth: 0.15,
-      },
-      footStyles: {
-        font: activeFont,
-        fontStyle: 'bold',
-        fillColor: [248, 250, 252],
-        textColor: COLOR_INK,
-        halign: 'right',
-      },
-      alternateRowStyles: { fillColor: [252, 253, 254] },
-      columnStyles: {
-        0: { cellWidth: 8, halign: 'center', textColor: COLOR_MUTED },
-        1: { cellWidth: 27 },
-        2: { cellWidth: 'auto' },
-        3: { cellWidth: 21 },
+        3: { cellWidth: 32, textColor: COLOR_SLATE },
         4: { cellWidth: 24, textColor: COLOR_SLATE },
-        5: { cellWidth: 26, halign: 'right', textColor: COLOR_SLATE },
-        6: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+        5: { cellWidth: 30, halign: 'right', fontStyle: 'bold' },
+      },
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const raw = String(data.cell.raw || '');
+          if (raw.includes('→')) {
+            data.cell.text = [''];
+          }
+        }
+      },
+      didDrawCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 3) {
+          const raw = String(data.cell.raw || '');
+          if (raw.includes('→')) {
+            const [p1, p2] = raw.split('→').map((s) => s.trim());
+            const textX = data.cell.x + data.cell.padding('left');
+            const midY = data.cell.y + data.cell.height / 2 + 0.9;
+            drawTransferPairWithArrow(
+              doc,
+              activeFont,
+              'normal',
+              7.6,
+              p1 || '',
+              p2 || '',
+              textX,
+              midY,
+              COLOR_SLATE,
+              COLOR_TEAL,
+              COLOR_SLATE
+            );
+          }
+        }
       },
     });
     cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 10) + 5;
@@ -1419,7 +2008,7 @@ function stampPageFooters(doc: any, activeFont: string, report: ExpenseReportDat
     doc.setPage(p);
     doc.setDrawColor(...COLOR_BORDER);
     doc.setLineWidth(0.2);
-    doc.line(marginX, pageHeight - 11, pageWidth - marginX, pageHeight - 11);
+    doc.line(marginX, pageHeight - 10.5, pageWidth - marginX, pageHeight - 10.5);
 
     doc.setFont(activeFont, 'normal');
     doc.setFontSize(7.2);
@@ -1427,10 +2016,10 @@ function stampPageFooters(doc: any, activeFont: string, report: ExpenseReportDat
     doc.text(
       `TdyTrip  •  ${report.tripName}  •  Báo cáo quyết toán chính thức`,
       marginX,
-      pageHeight - 7
+      pageHeight - 6.8
     );
     doc.setFont(activeFont, 'bold');
-    doc.text(`Trang ${p} / ${totalPages}`, pageWidth - marginX, pageHeight - 7, {
+    doc.text(`Trang ${p} / ${totalPages}`, pageWidth - marginX, pageHeight - 6.8, {
       align: 'right',
     });
   }
@@ -1472,7 +2061,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
   const pageWidth = doc.internal.pageSize.getWidth();
   const marginX = 14;
 
-  // Trường hợp lọc theo 1 thành viên cụ thể: Xuất báo cáo cá nhân chi tiết
+  // Trường hợp lọc theo 1 thành viên cụ thể: Xuất báo cáo cá nhân
   if (report.filterMemberId !== 'all' && report.memberAppendices.length > 0) {
     renderMemberAppendixSection(
       doc,
@@ -1482,7 +2071,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       report.memberAppendices[0],
       'BÁO CÁO QUYẾT TOÁN CÁ NHÂN',
       marginX,
-      12,
+      10.5,
       pageWidth
     );
     stampPageFooters(doc, activeFont, report);
@@ -1491,15 +2080,15 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
   }
 
   // ==========================================================================
-  // TRANG 1: TỔNG QUAN CHUYẾN ĐI & PHƯƠNG ÁN QUYẾT TOÁN CUỐI CÙNG (EXECUTIVE SUMMARY)
+  // TRANG 1: TỔNG QUAN CHUYẾN ĐI & PHƯƠNG ÁN QUYẾT TOÁN CUỐI CÙNG (EXECUTIVE DASHBOARD)
   // ==========================================================================
   let cursorY = drawExecutiveMasthead(
     doc,
     activeFont,
     report,
-    'BÁO CÁO TỔNG HỢP & QUYẾT TOÁN CHUYẾN ĐI',
+    'BÁO CÁO TỔNG HỢP & QUYẾT TOÁN',
     marginX,
-    12,
+    10,
     pageWidth
   );
 
@@ -1508,14 +2097,13 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     doc,
     activeFont,
     '01',
-    'TỔNG QUAN CHI TIÊU CHUYẾN ĐI',
-    `${report.overview.memberCount} thành viên  •  ${report.overview.expenseCount} khoản chi tiêu`,
+    'TỔNG QUAN CHI TIÊU',
+    `${report.overview.memberCount} thành viên  •  ${report.overview.expenseCount} khoản chi`,
     marginX,
     cursorY,
     pageWidth
   );
 
-  // Tìm hạng mục chi lớn nhất & người chi nhiều nhất để hiển thị thông tin đắt giá thay vì "0 đ"
   const topCat = report.overview.byCategory[0];
   const topPayer = [...report.settlement.balances].sort(
     (a, b) => b.paidExpense - a.paidExpense
@@ -1530,18 +2118,26 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     activeFont,
     [
       {
-        label: 'Tổng chi tiêu chuyến đi',
+        label: 'Tổng chi tiêu',
         value: `${formatVND(report.overview.totalExpenseAmount, false)} đ`,
         subtext: `${report.overview.expenseCount} khoản chi • ${report.overview.byDay.length} ngày`,
+        iconName: 'Wallet',
         accentColor: COLOR_TEAL,
+        surfaceColor: [240, 253, 250],
+        borderColor: [153, 246, 228],
+        iconBgColor: [204, 251, 241],
         valueColor: COLOR_TEAL_DARK,
       },
       {
-        label: 'Bình quân mỗi người',
+        label: 'Bình quân / người',
         value: `${formatVND(report.overview.averagePerMember, false)} đ`,
         subtext: `Chia cho ${report.overview.memberCount} thành viên`,
-        accentColor: COLOR_INK,
-        valueColor: COLOR_INK,
+        iconName: 'Users',
+        accentColor: [37, 99, 235],
+        surfaceColor: [239, 246, 255],
+        borderColor: [191, 219, 254],
+        iconBgColor: [219, 234, 254],
+        valueColor: [30, 64, 175],
       },
       {
         label: 'Hạng mục lớn nhất',
@@ -1549,25 +2145,37 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
         subtext: topCat
           ? `${shortenCategoryLabelForTable(topCat.categoryName)} (${topCat.percentage}%)`
           : 'Chưa phát sinh',
-        accentColor: COLOR_SLATE,
-        valueColor: COLOR_INK,
+        iconName: topCat?.categoryIcon || 'PieChart',
+        accentColor: [217, 119, 6],
+        surfaceColor: [255, 251, 235],
+        borderColor: [253, 230, 138],
+        iconBgColor: [254, 243, 199],
+        valueColor: [180, 83, 9],
       },
       report.overview.totalTransferAmount > 0
         ? {
-            label: 'Đã chuyển trả nợ',
+            label: 'Chuyển trả nội bộ',
             value: `${formatVND(report.overview.totalTransferAmount, false)} đ`,
             subtext: `${report.overview.transferCount} giao dịch đã ghi nhận`,
-            accentColor: COLOR_SLATE,
-            valueColor: COLOR_INK,
+            iconName: 'ArrowRightLeft',
+            accentColor: [124, 58, 237],
+            surfaceColor: [245, 243, 255],
+            borderColor: [221, 214, 254],
+            iconBgColor: [237, 233, 254],
+            valueColor: [109, 40, 217],
           }
         : {
             label: 'Chi hộ nhiều nhất',
             value: topPayer ? `${formatVND(topPayer.paidExpense, false)} đ` : '0 đ',
             subtext: topPayer
-              ? `${topPayer.memberName} (${topPayerPct}% tổng chi)`
+              ? `${topPayer.memberName} (${topPayerPct}% tổng đoàn)`
               : 'Chưa phát sinh',
-            accentColor: COLOR_SLATE,
-            valueColor: COLOR_INK,
+            iconName: 'Award',
+            accentColor: [124, 58, 237],
+            surfaceColor: [245, 243, 255],
+            borderColor: [221, 214, 254],
+            iconBgColor: [237, 233, 254],
+            valueColor: [109, 40, 217],
           },
     ],
     marginX,
@@ -1575,7 +2183,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     pageWidth
   );
 
-  // 2 Biểu đồ đặt song song 2 cột (Cơ cấu Danh mục & Tiến độ theo Ngày)
+  // 2 Biểu đồ đặt song song 2 cột (Cơ cấu Hạng mục & Tiến độ theo Ngày) kèm Icon
   cursorY = drawSideBySideOverviewCharts(
     doc,
     activeFont,
@@ -1586,19 +2194,19 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     pageWidth
   );
 
-  // PHẦN 02: CHIA TIỀN & QUYẾT TOÁN CUỐI CÙNG
+  // PHẦN 02: QUYẾT TOÁN & CHUYỂN KHOẢN CUỐI KỲ
   cursorY = drawSectionHeading(
     doc,
     activeFont,
     '02',
-    'CÂN ĐỐI THU CHI & LỆNH CHUYỂN KHOẢN QUYẾT TOÁN',
-    `${report.settlement.simplifiedDebts.length} lệnh chuyển tối ưu dòng tiền`,
+    'CÂN ĐỐI THU CHI & KẾT QUẢ QUYẾT TOÁN',
+    `${report.settlement.simplifiedDebts.length} lệnh chuyển khoản tối ưu`,
     marginX,
     cursorY,
     pageWidth
   );
 
-  // Biểu đồ tương quan Đã chi vs. Phải chịu
+  // Biểu đồ tương quan Đã chi vs. Phải chịu kèm Avatar tròn
   cursorY = drawMemberBalanceComparisonChart(
     doc,
     activeFont,
@@ -1610,11 +2218,28 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
 
   const hasAnyTransfers = report.overview.totalTransferAmount > 0;
 
-  // Bảng 2.1: Bảng cân đối tổng hợp từng thành viên (Ẩn cột Chuyển trả ròng nếu cả chuyến = 0 để bảng thoáng & tinh gọn)
+  // Bảng 2.1: Bảng cân đối tổng hợp từng thành viên
   if (typeof autoTableFn === 'function') {
     const balanceHead = hasAnyTransfers
-      ? [['Thành viên', 'Đã đứng ra chi (đ)', 'Phần phải chịu (đ)', 'Chuyển trả ròng (đ)', 'Số dư cuối (đ)', 'Trạng thái']]
-      : [['Thành viên', 'Đã đứng ra chi (đ)', 'Phần phải chịu (đ)', 'Số dư quyết toán cuối (đ)', 'Trạng thái quyết toán']];
+      ? [
+          [
+            'Thành viên',
+            { content: 'Đã chi (đ)', styles: { halign: 'right' } },
+            { content: 'Phải chịu (đ)', styles: { halign: 'right' } },
+            { content: 'Chuyển ròng (đ)', styles: { halign: 'right' } },
+            { content: 'Số dư cuối (đ)', styles: { halign: 'right' } },
+            { content: 'Trạng thái', styles: { halign: 'center' } },
+          ],
+        ]
+      : [
+          [
+            'Thành viên',
+            { content: 'Đã chi (đ)', styles: { halign: 'right' } },
+            { content: 'Phải chịu (đ)', styles: { halign: 'right' } },
+            { content: 'Số dư cuối (đ)', styles: { halign: 'right' } },
+            { content: 'Trạng thái', styles: { halign: 'center' } },
+          ],
+        ];
 
     const balanceRows = report.settlement.balances.map((b) => {
       const prefix = b.balance > 0 ? '+' : '';
@@ -1644,25 +2269,25 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       rowPageBreak: 'avoid',
       head: balanceHead,
       body: balanceRows,
-      margin: { left: marginX, right: marginX, bottom: 15 },
+      margin: { left: marginX, right: marginX, bottom: 14 },
       styles: {
         font: activeFont,
-        fontSize: 8.2,
-        cellPadding: 1.9,
+        fontSize: 8.1,
+        cellPadding: 1.8,
         textColor: COLOR_INK,
         lineColor: COLOR_BORDER,
-        lineWidth: 0.1,
+        lineWidth: 0.12,
         valign: 'middle',
       },
       headStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: [241, 245, 249],
-        textColor: COLOR_INK,
-        lineColor: [203, 213, 225],
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        lineColor: [30, 41, 59],
         lineWidth: 0.15,
       },
-      alternateRowStyles: { fillColor: [252, 253, 254] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: hasAnyTransfers
         ? {
             0: { cellWidth: 34, fontStyle: 'bold' },
@@ -1673,7 +2298,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             5: { cellWidth: 'auto', halign: 'center' },
           }
         : {
-            0: { cellWidth: 42, fontStyle: 'bold' },
+            0: { cellWidth: 38, fontStyle: 'bold' },
             1: { cellWidth: 36, halign: 'right' },
             2: { cellWidth: 36, halign: 'right' },
             3: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
@@ -1688,91 +2313,153 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             data.cell.styles.textColor = COLOR_TEAL_DARK;
             data.cell.styles.fontStyle = 'bold';
           } else if (rawText.startsWith('-') || rawText === 'Cần chuyển') {
-            data.cell.styles.textColor = COLOR_ROSE;
+            data.cell.styles.textColor = COLOR_ROSE_DARK;
             data.cell.styles.fontStyle = 'bold';
           }
         }
       },
     });
-    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 14) + 4.5;
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 14) + 3.8;
   }
 
-  // Bảng 2.2: Lệnh chuyển khoản tất toán cuối cùng (Bảng quan trọng nhất được nhấn nổi bật)
+  // Bảng 2.2: KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN CUỐI CÙNG (Nổi bật nhất trên Trang 1)
   cursorY = ensurePageSpace(doc, cursorY, 22);
+  drawIconBadge(doc, 'Send', marginX, cursorY - 0.5, 4.4, [15, 118, 110], [204, 251, 241]);
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(8.8);
-  doc.setTextColor(...COLOR_INK);
+  doc.setTextColor(...COLOR_TEAL_DARK);
   doc.text(
-    'LỆNH CHUYỂN KHOẢN TẤT TOÁN CUỐI CÙNG (PHƯƠNG ÁN TỐI ƯU DÒNG TIỀN)',
-    marginX,
-    cursorY + 3
+    'KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN CUỐI CÙNG (TẤT TOÁN 1 LẦN)',
+    marginX + 5.6,
+    cursorY + 2.8
   );
-  cursorY += 4.5;
+  cursorY += 4.2;
 
   if (typeof autoTableFn === 'function') {
+    const hasDebts = report.settlement.simplifiedDebts.length > 0;
     const simplifiedBody = report.settlement.simplifiedDebts.map((d, idx) => [
       `${idx + 1}`,
-      `${d.fromMemberName}  ->  ${d.toMemberName}`,
-      `${formatVND(d.amount, false)} đ`,
+      `${d.fromMemberName} → ${d.toMemberName}`,
+      formatVND(d.amount, false),
       d.toBankInfo || 'Chưa cập nhật STK nhận',
     ]);
 
     autoTableFn.call(doc, {
       startY: cursorY,
       rowPageBreak: 'avoid',
-      head: [['#', 'Người chuyển  ->  Người nhận', 'Số tiền cần chuyển', 'Thông tin tài khoản ngân hàng nhận']],
-      body:
-        simplifiedBody.length > 0
-          ? simplifiedBody
-          : [['—', 'Tất cả thành viên đã tất toán cân bằng (không còn công nợ)', '0 đ', '—']],
-      margin: { left: marginX, right: marginX, bottom: 15 },
+      head: [
+        [
+          { content: '#', styles: { halign: 'center' } },
+          '', // Vẽ tiêu đề "Người chuyển → Người nhận" bằng vector arrow trong didDrawCell
+          { content: 'Số tiền cần chuyển (đ)', styles: { halign: 'right' } },
+          'Tài khoản ngân hàng nhận',
+        ],
+      ],
+      body: hasDebts
+        ? simplifiedBody
+        : [['—', 'Tất cả thành viên đã cân bằng công nợ', '0', '—']],
+      margin: { left: marginX, right: marginX, bottom: 14 },
       styles: {
         font: activeFont,
         fontSize: 8.4,
-        cellPadding: 2.1,
+        cellPadding: 2,
         textColor: COLOR_INK,
-        lineColor: [203, 213, 225],
-        lineWidth: 0.12,
+        lineColor: [153, 246, 228],
+        lineWidth: 0.16,
         valign: 'middle',
       },
       headStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: COLOR_INK,
+        fillColor: COLOR_TEAL_DARK,
         textColor: [255, 255, 255],
       },
-      alternateRowStyles: { fillColor: [248, 250, 252] },
+      alternateRowStyles: { fillColor: [240, 253, 250] },
       columnStyles: {
         0: { cellWidth: 10, halign: 'center', textColor: COLOR_MUTED },
-        1: { cellWidth: 58, fontStyle: 'bold' },
-        2: { cellWidth: 38, halign: 'right', fontStyle: 'bold', textColor: COLOR_TEAL_DARK },
-        3: { cellWidth: 'auto' },
+        1: { cellWidth: 56, fontStyle: 'bold' },
+        2: { cellWidth: 42, halign: 'right', fontStyle: 'bold', textColor: COLOR_TEAL_DARK },
+        3: { cellWidth: 'auto', fontStyle: 'bold', textColor: COLOR_SLATE },
+      },
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 1 && hasDebts) {
+          // Xóa text mặc định để vẽ tên + mũi tên vector sắc nét trong didDrawCell
+          data.cell.text = [''];
+        }
+      },
+      didDrawCell: (data: any) => {
+        if (data.column.index === 1) {
+          const textX = data.cell.x + data.cell.padding('left');
+          const midY = data.cell.y + data.cell.height / 2 + 1;
+          if (data.section === 'head') {
+            drawTransferPairWithArrow(
+              doc,
+              activeFont,
+              'bold',
+              8.3,
+              'Người chuyển',
+              'Người nhận',
+              textX,
+              midY,
+              [255, 255, 255],
+              [153, 246, 228],
+              [255, 255, 255]
+            );
+          } else if (data.section === 'body' && hasDebts) {
+            const debt = report.settlement.simplifiedDebts[data.row.index];
+            if (debt) {
+              drawTransferPairWithArrow(
+                doc,
+                activeFont,
+                'bold',
+                8.5,
+                debt.fromMemberName,
+                debt.toMemberName,
+                textX,
+                midY,
+                COLOR_ROSE_DARK,
+                COLOR_TEAL,
+                COLOR_TEAL_DARK
+              );
+            }
+          }
+        }
       },
     });
-    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 14) + 6;
+    cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 14) + 5;
   }
 
   // ==========================================================================
-  // PHẦN 03: SỔ CHI TIẾT CHI TIÊU TOÀN CHUYẾN ĐI (Sang trang mới nếu phần còn lại của Trang 1 hẹp)
+  // PHẦN 03: SỔ CHI TIẾT CHI TIÊU TOÀN CHUYẾN ĐI (Tối ưu dòng gọn để 42 mục vừa khít 1 trang)
   // ==========================================================================
   if (cursorY > 195) {
     doc.addPage();
-    cursorY = 14;
+    cursorY = 12;
   }
 
   cursorY = drawSectionHeading(
     doc,
     activeFont,
     '03',
-    'SỔ CHI TIẾT CHI TIÊU & CHUYỂN KHOẢN TOÀN CHUYẾN ĐI',
-    `Liệt kê đầy đủ ${report.rows.length} bản ghi theo trình tự thời gian`,
+    'SỔ CHI TIẾT CHI TIÊU & CHUYỂN KHOẢN',
+    `${report.rows.length} giao dịch theo trình tự thời gian`,
     marginX,
     cursorY,
     pageWidth
   );
 
   if (typeof autoTableFn === 'function') {
-    const tableHead = [['#', 'Thời gian', 'Nội dung khoản chi / chuyển', 'Người chi', 'Phạm vi tham gia', 'Hạng mục', 'Số tiền (đ)']];
+    const tableHead = [
+      [
+        { content: '#', styles: { halign: 'center' } },
+        'Thời gian',
+        'Nội dung khoản chi',
+        'Người chi',
+        'Phạm vi',
+        'Hạng mục',
+        { content: 'Số tiền (đ)', styles: { halign: 'right' } },
+      ],
+    ];
     const tableBody = report.rows.map((r, idx) => [
       `${idx + 1}`,
       r.date,
@@ -1796,21 +2483,26 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
         tableBody.length > 0
           ? [
               [
-                '',
-                '',
-                'Tổng chi tiêu toàn chuyến đi (không tính chuyển khoản trả nợ)',
-                '',
-                '',
-                '',
-                formatVND(report.overview.totalExpenseAmount, false),
+                {
+                  content:
+                    report.overview.transferCount > 0
+                      ? `TỔNG CHI TIÊU TOÀN CHUYẾN ĐI (${report.overview.expenseCount} khoản chi • Chuyển trả: ${formatVND(report.totalTransferAmount, false)} đ)`
+                      : `TỔNG CHI TIÊU TOÀN CHUYẾN ĐI (${report.overview.expenseCount} khoản chi)`,
+                  colSpan: 6,
+                  styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_INK },
+                },
+                {
+                  content: formatVND(report.overview.totalExpenseAmount, false),
+                  styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_TEAL_DARK },
+                },
               ],
             ]
           : undefined,
-      margin: { left: marginX, right: marginX, bottom: 15 },
+      margin: { left: marginX, right: marginX, bottom: 13 },
       styles: {
         font: activeFont,
-        fontSize: 7.9,
-        cellPadding: 1.65,
+        fontSize: 7.45,
+        cellPadding: 1.25,
         textColor: COLOR_INK,
         lineColor: COLOR_BORDER,
         lineWidth: 0.1,
@@ -1819,33 +2511,66 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       headStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: [241, 245, 249],
-        textColor: COLOR_INK,
-        lineColor: [203, 213, 225],
+        fillColor: [30, 41, 59],
+        textColor: [255, 255, 255],
+        lineColor: [30, 41, 59],
         lineWidth: 0.15,
       },
       footStyles: {
         font: activeFont,
         fontStyle: 'bold',
-        fillColor: [248, 250, 252],
+        fillColor: [240, 253, 250],
         textColor: COLOR_TEAL_DARK,
+        lineColor: [153, 246, 228],
+        lineWidth: 0.2,
         halign: 'right',
       },
-      alternateRowStyles: { fillColor: [252, 253, 254] },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
       columnStyles: {
         0: { cellWidth: 8, halign: 'center', textColor: COLOR_MUTED },
-        1: { cellWidth: 27 },
+        1: { cellWidth: 26 },
         2: { cellWidth: 'auto' },
-        3: { cellWidth: 20 },
-        4: { cellWidth: 36, textColor: COLOR_SLATE },
-        5: { cellWidth: 24, textColor: COLOR_SLATE },
-        6: { cellWidth: 26, halign: 'right', fontStyle: 'bold' },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 31, textColor: COLOR_SLATE },
+        5: { cellWidth: 23, textColor: COLOR_SLATE },
+        6: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+      },
+      didParseCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const raw = String(data.cell.raw || '');
+          if (raw.includes('→')) {
+            data.cell.text = [''];
+          }
+        }
+      },
+      didDrawCell: (data: any) => {
+        if (data.section === 'body' && data.column.index === 4) {
+          const raw = String(data.cell.raw || '');
+          if (raw.includes('→')) {
+            const [p1, p2] = raw.split('→').map((s) => s.trim());
+            const textX = data.cell.x + data.cell.padding('left');
+            const midY = data.cell.y + data.cell.height / 2 + 0.9;
+            drawTransferPairWithArrow(
+              doc,
+              activeFont,
+              'normal',
+              7.3,
+              p1 || '',
+              p2 || '',
+              textX,
+              midY,
+              COLOR_SLATE,
+              COLOR_TEAL,
+              COLOR_SLATE
+            );
+          }
+        }
       },
     });
   }
 
   // ==========================================================================
-  // PHẦN 04: PHỤ LỤC THỐNG KÊ THEO TỪNG CÁ NHÂN (MỖI THÀNH VIÊN BẮT ĐẦU TRÊN 1 TRANG MỚI)
+  // PHẦN 04: PHỤ LỤC THỐNG KÊ THEO TỪNG CÁ NHÂN (MỖI THÀNH VIÊN 1 TRANG TINH GỌN)
   // ==========================================================================
   report.memberAppendices.forEach((appendix, idx) => {
     doc.addPage();
@@ -1857,7 +2582,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       appendix,
       `PHỤ LỤC CÁ NHÂN (${idx + 1}/${report.memberAppendices.length})`,
       marginX,
-      12,
+      10.5,
       pageWidth
     );
   });

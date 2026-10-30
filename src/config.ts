@@ -114,7 +114,7 @@ export const DEFAULT_CATEGORIES: Category[] = [
   },
   {
     id: 'cat_transport',
-    name: 'Di chuyển tại chỗ',
+    name: 'Di chuyển',
     icon: 'Car',
     order: 2,
     hidden: false,
@@ -185,11 +185,15 @@ export function sortCategoriesTailOrder(categories: Category[]): Category[] {
   };
 
   return [...categories]
-    .map((c) =>
-      c.id === 'cat_flight' && c.name === 'Vé máy bay / Tàu xe'
-        ? { ...c, name: 'Vé đi/về' }
-        : c
-    )
+    .map((c) => {
+      if (c.id === 'cat_flight' && c.name === 'Vé máy bay / Tàu xe') {
+        return { ...c, name: 'Vé đi/về' };
+      }
+      if (c.name === 'Di chuyển tại chỗ') {
+        return { ...c, name: 'Di chuyển' };
+      }
+      return c;
+    })
     .sort((a, b) => getCategoryRank(a) - getCategoryRank(b))
     .map((c, idx) => ({ ...c, order: idx + 1 }));
 }
