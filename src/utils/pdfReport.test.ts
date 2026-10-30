@@ -14,11 +14,12 @@ const mockConfig: TripConfig = {
   location: 'Đà Lạt, Lâm Đồng',
   startDate: '2026-10-24',
   endDate: '2026-10-26',
-  currency: 'VND',
-  defaultSplitMode: 'equal',
-  rev: 3,
-  updatedAt: '2026-10-24 10:00:00',
   tripStatus: 'active',
+  defaultSplitMode: 'equal',
+  enabledSplitModes: ['equal', 'shares', 'exact'],
+  suggestMultipliers: [1000, 10000, 100000],
+  maxSuggestAmount: 100000000,
+  accentColor: '#0f766e',
 };
 
 const mockMembers: Member[] = [
@@ -26,18 +27,38 @@ const mockMembers: Member[] = [
     id: 'm1',
     name: 'Minh Anh',
     avatarColor: '#0f766e',
+    defaultWeight: 1,
     bankName: 'Vietcombank',
     accountNo: '0123456789',
     accountHolder: 'NGUYEN MINH ANH',
+    active: true,
   },
-  { id: 'm2', name: 'Hoàng Nam', avatarColor: '#0369a1' },
-  { id: 'm3', name: 'Thảo Vy', avatarColor: '#b45309' },
+  {
+    id: 'm2',
+    name: 'Hoàng Nam',
+    avatarColor: '#0369a1',
+    defaultWeight: 1,
+    bankName: '',
+    accountNo: '',
+    accountHolder: '',
+    active: true,
+  },
+  {
+    id: 'm3',
+    name: 'Thảo Vy',
+    avatarColor: '#b45309',
+    defaultWeight: 1,
+    bankName: '',
+    accountNo: '',
+    accountHolder: '',
+    active: true,
+  },
 ];
 
 const mockCategories: Category[] = [
-  { id: 'cat_food', name: 'Ăn uống', icon: 'Utensils', order: 1 },
-  { id: 'cat_move', name: 'Di chuyển', icon: 'Car', order: 2 },
-  { id: 'cat_other', name: 'Khác', icon: 'Package', order: 99 },
+  { id: 'cat_food', name: 'Ăn uống', icon: 'Utensils', order: 1, hidden: false },
+  { id: 'cat_move', name: 'Di chuyển', icon: 'Car', order: 2, hidden: false },
+  { id: 'cat_other', name: 'Khác', icon: 'Package', order: 99, hidden: false },
 ];
 
 const mockExpenses: ExpenseRecord[] = [
@@ -52,9 +73,12 @@ const mockExpenses: ExpenseRecord[] = [
     splitMode: 'equal',
     categoryId: 'cat_food',
     spentAt: '2026-10-24 19:30',
+    createdBy: 'm1',
     createdAt: '2026-10-24 19:35:00',
+    updatedBy: 'm1',
     updatedAt: '2026-10-24 19:35:00',
     deleted: false,
+    note: '',
   },
   {
     id: 'exp_2',
@@ -67,9 +91,12 @@ const mockExpenses: ExpenseRecord[] = [
     splitMode: 'equal',
     categoryId: 'cat_move',
     spentAt: '2026-10-24 08:15',
+    createdBy: 'm2',
     createdAt: '2026-10-24 08:20:00',
+    updatedBy: 'm2',
     updatedAt: '2026-10-24 08:20:00',
     deleted: false,
+    note: '',
   },
   {
     id: 'exp_3',
@@ -82,9 +109,12 @@ const mockExpenses: ExpenseRecord[] = [
     splitMode: 'exact',
     categoryId: 'cat_other',
     spentAt: '2026-10-25 10:00',
+    createdBy: 'm2',
     createdAt: '2026-10-25 10:00:00',
+    updatedBy: 'm2',
     updatedAt: '2026-10-25 10:00:00',
     deleted: false,
+    note: '',
   },
   {
     id: 'exp_deleted',
@@ -97,9 +127,12 @@ const mockExpenses: ExpenseRecord[] = [
     splitMode: 'equal',
     categoryId: 'cat_other',
     spentAt: '2026-10-24 12:00',
+    createdBy: 'm3',
     createdAt: '2026-10-24 12:00:00',
+    updatedBy: 'm3',
     updatedAt: '2026-10-24 12:05:00',
     deleted: true,
+    note: '',
   },
 ];
 
