@@ -1233,8 +1233,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </div>
           <p className="text-[10.5px] text-slate-500 leading-snug">
             {reportPreview.memberSummary
-              ? `Gồm: Dashboard thu chi cá nhân, biểu đồ hạng mục, lệnh chuyển khoản quyết toán & các khoản ${reportPreview.memberSummary.memberName} đã trực tiếp chi trả.`
-              : `Gồm 4 phần: Dashboard Tổng quan • Quyết toán & lệnh chuyển cuối (${reportPreview.settlement.simplifiedDebts.length} lệnh) • Sổ chi tiết • Phụ lục quyết toán riêng cho ${reportPreview.memberAppendices.length} thành viên.`}
+              ? `Gồm: Tổng quan thu chi cá nhân, chi phí theo hạng mục, kết quả quyết toán & các khoản ${reportPreview.memberSummary.memberName} đã chi.`
+              : `Gồm 4 phần: Tổng quan chi tiêu • Cân đối thu chi & quyết toán (${reportPreview.settlement.simplifiedDebts.length} giao dịch) • Danh sách chi tiết khoản chi • Phụ lục riêng cho ${reportPreview.memberAppendices.length} thành viên.`}
           </p>
         </div>
       </section>

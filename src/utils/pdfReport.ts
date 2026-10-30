@@ -1035,7 +1035,7 @@ function drawExecutiveMasthead(
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(6.5);
   doc.setTextColor(148, 163, 184);
-  doc.text('TỔNG CHI TOÀN ĐOÀN', rightBoxX + rightBoxW - 3, rightBoxY + 4.2, {
+  doc.text('TỔNG CHI CHUYẾN ĐI', rightBoxX + rightBoxW - 3, rightBoxY + 4.2, {
     align: 'right',
   });
 
@@ -1275,7 +1275,7 @@ function drawSideBySideOverviewCharts(
   drawCompactChartCard(
     doc,
     activeFont,
-    'Cơ cấu theo Hạng mục',
+    'Chi tiêu theo Hạng mục',
     'PieChart',
     [13, 148, 136],
     [204, 251, 241],
@@ -1301,7 +1301,7 @@ function drawSideBySideOverviewCharts(
   drawCompactChartCard(
     doc,
     activeFont,
-    'Tiến độ theo Ngày',
+    'Chi tiêu theo Ngày',
     'Calendar',
     [37, 99, 235],
     [219, 234, 254],
@@ -1513,7 +1513,7 @@ function renderMemberAppendixSection(
     doc.setFillColor(...COLOR_HERO_CARD);
     doc.setDrawColor(51, 65, 85);
     doc.setLineWidth(0.2);
-    const bankText = `TK cá nhân: ${appendix.bankInfo}`;
+    const bankText = `TK nhận: ${appendix.bankInfo}`;
     doc.setFont(activeFont, 'bold');
     doc.setFontSize(7.4);
     const bw = Math.min(78, doc.getTextWidth(bankText) + 6);
@@ -1549,10 +1549,10 @@ function renderMemberAppendixSection(
       : [226, 232, 240];
 
   const balanceStatusText = isPositive
-    ? 'Được nhận về cuối kỳ'
+    ? 'Số tiền được nhận về'
     : isNegative
-      ? 'Cần chuyển thanh toán'
-      : 'Đã tất toán cân bằng';
+      ? 'Số tiền cần chuyển trả'
+      : 'Đã cân bằng thu chi';
   const balPrefix = isPositive ? '+' : '';
 
   const hasMemberTransfers =
@@ -1567,9 +1567,9 @@ function renderMemberAppendixSection(
     activeFont,
     [
       {
-        label: 'Đã đứng ra chi',
+        label: 'Đã chi',
         value: `${formatVND(appendix.paidExpense, false)} đ`,
-        subtext: `${appendix.paidRows.filter((r) => r.recordType === 'expense').length} khoản (${shareRatioPct}% tổng đoàn)`,
+        subtext: `${appendix.paidRows.filter((r) => r.recordType === 'expense').length} khoản (${shareRatioPct}% tổng chi)`,
         iconName: 'Wallet',
         accentColor: COLOR_TEAL,
         surfaceColor: [240, 253, 250],
@@ -1578,9 +1578,9 @@ function renderMemberAppendixSection(
         valueColor: COLOR_TEAL_DARK,
       },
       {
-        label: 'Phần phải chịu',
+        label: 'Phải chịu',
         value: `${formatVND(appendix.owedExpense, false)} đ`,
-        subtext: `${appendix.participatedRows.filter((r) => r.recordType === 'expense').length} khoản thụ hưởng`,
+        subtext: `Tham gia ${appendix.participatedRows.filter((r) => r.recordType === 'expense').length} khoản chi`,
         iconName: 'Users',
         accentColor: [37, 99, 235],
         surfaceColor: [239, 246, 255],
@@ -1590,7 +1590,7 @@ function renderMemberAppendixSection(
       },
       hasMemberTransfers
         ? {
-            label: 'Chuyển trả ròng',
+            label: 'Đã chuyển / nhận',
             value: `${formatVND(appendix.netTransfer, false)} đ`,
             subtext: `Chuyển ${formatVND(appendix.sentTransfer, false)} / Nhận ${formatVND(appendix.receivedTransfer, false)}`,
             iconName: 'ArrowRightLeft',
@@ -1601,12 +1601,17 @@ function renderMemberAppendixSection(
             valueColor: COLOR_INK,
           }
         : {
-            label: 'Lệnh tất toán',
-            value: `${appendix.finalSettlementActions.length} giao dịch`,
+            label: 'Giao dịch tất toán',
+            value:
+              appendix.finalSettlementActions.length > 0
+                ? `${appendix.finalSettlementActions.length} giao dịch`
+                : 'Không cần chuyển',
             subtext:
               appendix.finalSettlementActions.length > 0
-                ? 'Tối ưu dòng tiền'
-                : 'Không phát sinh',
+                ? isNegative
+                  ? 'Chuyển khoản tất toán'
+                  : 'Nhận tiền tất toán'
+                : 'Đã cân bằng',
             iconName: 'Send',
             accentColor: [124, 58, 237],
             surfaceColor: [245, 243, 255],
@@ -1615,7 +1620,7 @@ function renderMemberAppendixSection(
             valueColor: COLOR_INK,
           },
       {
-        label: 'Số dư cuối kỳ',
+        label: 'Số dư cuối',
         value: `${balPrefix}${formatVND(appendix.balance, false)} đ`,
         subtext: balanceStatusText,
         iconName: 'CheckCircle',
@@ -1632,8 +1637,8 @@ function renderMemberAppendixSection(
   );
 
   // Bố cục 2 cột song song:
-  // - Cột trái: Khung KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN
-  // - Cột phải: Biểu đồ Cơ cấu thụ hưởng theo Hạng mục
+  // - Cột trái: Khung KẾT QUẢ QUYẾT TOÁN CÁ NHÂN
+  // - Cột phải: Biểu đồ Chi phí theo Hạng mục
   const gap = 4;
   const leftColW = fullWidth * 0.48;
   const rightColW = fullWidth - leftColW - gap;
@@ -1646,7 +1651,7 @@ function renderMemberAppendixSection(
 
   cursorY = ensurePageSpace(doc, cursorY, blockH + 4);
 
-  // Vẽ Cột trái: Khung Kết quả Chuyển khoản Quyết toán nổi bật
+  // Vẽ Cột trái: Khung Kết quả Quyết toán cá nhân nổi bật
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(isNegative ? 254 : 153, isNegative ? 205 : 246, isNegative ? 211 : 228);
   doc.setLineWidth(0.3);
@@ -1672,7 +1677,7 @@ function renderMemberAppendixSection(
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(8.1);
   doc.setTextColor(...COLOR_INK);
-  doc.text('KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN', marginX + 9.8, cursorY + 5.1);
+  doc.text('KẾT QUẢ QUYẾT TOÁN CÁ NHÂN', marginX + 9.8, cursorY + 5.1);
 
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.2);
@@ -1683,7 +1688,7 @@ function renderMemberAppendixSection(
     doc.setFontSize(7.8);
     doc.setTextColor(...COLOR_SLATE);
     doc.text(
-      `${appendix.memberName} đã cân bằng công nợ, không cần chuyển thêm.`,
+      `${appendix.memberName} đã cân bằng thu chi, không cần chuyển khoản.`,
       marginX + 5,
       cursorY + 14.5
     );
@@ -1823,7 +1828,7 @@ function renderMemberAppendixSection(
     });
   }
 
-  // Dòng công thức đối chiếu nhanh dưới đáy hộp Quyết toán cá nhân (dùng dấu '-' chuẩn ASCII)
+  // Dòng công thức tính nhanh dưới đáy hộp Quyết toán cá nhân (dùng dấu '-' chuẩn ASCII)
   const formulaY = cursorY + blockH - 3.2;
   doc.setDrawColor(226, 232, 240);
   doc.setLineWidth(0.18);
@@ -1832,17 +1837,17 @@ function renderMemberAppendixSection(
   doc.setFontSize(6.8);
   doc.setTextColor(...COLOR_MUTED);
   doc.text(
-    `Đối chiếu: Đã chi (${formatVND(appendix.paidExpense, false)}) - Phải chịu (${formatVND(appendix.owedExpense, false)}) = ${balPrefix}${formatVND(appendix.balance, false)} đ`,
+    `Tính toán: Đã chi (${formatVND(appendix.paidExpense, false)}) - Phải chịu (${formatVND(appendix.owedExpense, false)}) = ${balPrefix}${formatVND(appendix.balance, false)} đ`,
     marginX + 4.8,
     formulaY
   );
 
-  // Vẽ Cột phải: Biểu đồ Cơ cấu thụ hưởng theo Hạng mục kèm Icon
+  // Vẽ Cột phải: Biểu đồ Chi phí theo Hạng mục kèm Icon
   if (appendix.byCategory.length > 0) {
     drawCompactChartCard(
       doc,
       activeFont,
-      `Thụ hưởng theo Hạng mục (${appendix.memberName})`,
+      `Chi phí theo Hạng mục (${appendix.memberName})`,
       'PieChart',
       [13, 148, 136],
       [204, 251, 241],
@@ -1868,13 +1873,13 @@ function renderMemberAppendixSection(
 
   cursorY += blockH + 4.5;
 
-  // Bảng các khoản thành viên đã trực tiếp chi trả
+  // Bảng các khoản thành viên đã chi
   cursorY = ensurePageSpace(doc, cursorY, 20);
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(8.6);
   doc.setTextColor(...COLOR_INK);
   doc.text(
-    `CÁC KHOẢN ${appendix.memberName.toUpperCase()} ĐÃ TRỰC TIẾP CHI TRẢ (${appendix.paidRows.length} KHOẢN)`,
+    `CÁC KHOẢN ${appendix.memberName.toUpperCase()} ĐÃ CHI (${appendix.paidRows.length} KHOẢN)`,
     marginX,
     cursorY + 3
   );
@@ -1899,21 +1904,21 @@ function renderMemberAppendixSection(
           { content: '#', styles: { halign: 'center' } },
           'Thời gian',
           'Nội dung khoản chi',
-          'Phạm vi',
+          'Chia cho',
           'Hạng mục',
-          { content: 'Số tiền đã chi (đ)', styles: { halign: 'right' } },
+          { content: 'Số tiền (đ)', styles: { halign: 'right' } },
         ],
       ],
       body:
         paidBody.length > 0
           ? paidBody
-          : [['—', '—', `${appendix.memberName} không trực tiếp đứng ra trả khoản nào`, '—', '—', '0']],
+          : [['—', '—', `${appendix.memberName} chưa chi khoản nào`, '—', '—', '0']],
       foot:
         paidBody.length > 0
           ? [
               [
                 {
-                  content: `TỔNG CỘNG ĐÃ TRỰC TIẾP CHI TRẢ (${appendix.paidRows.length} khoản)`,
+                  content: `TỔNG ĐÃ CHI (${appendix.paidRows.length} khoản)`,
                   colSpan: 5,
                   styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_INK },
                 },
@@ -2014,7 +2019,7 @@ function stampPageFooters(doc: any, activeFont: string, report: ExpenseReportDat
     doc.setFontSize(7.2);
     doc.setTextColor(...COLOR_MUTED);
     doc.text(
-      `TdyTrip  •  ${report.tripName}  •  Báo cáo quyết toán chính thức`,
+      `TdyTrip  •  ${report.tripName}  •  Báo cáo chi tiêu & quyết toán`,
       marginX,
       pageHeight - 6.8
     );
@@ -2080,19 +2085,19 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
   }
 
   // ==========================================================================
-  // TRANG 1: TỔNG QUAN CHUYẾN ĐI & PHƯƠNG ÁN QUYẾT TOÁN CUỐI CÙNG (EXECUTIVE DASHBOARD)
+  // TRANG 1: TỔNG QUAN CHUYẾN ĐI & KẾT QUẢ QUYẾT TOÁN
   // ==========================================================================
   let cursorY = drawExecutiveMasthead(
     doc,
     activeFont,
     report,
-    'BÁO CÁO TỔNG HỢP & QUYẾT TOÁN',
+    'BÁO CÁO CHI TIÊU & QUYẾT TOÁN',
     marginX,
     10,
     pageWidth
   );
 
-  // PHẦN 01: TỔNG QUAN CHUYẾN ĐI
+  // PHẦN 01: TỔNG QUAN CHI TIÊU
   cursorY = drawSectionHeading(
     doc,
     activeFont,
@@ -2154,9 +2159,9 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       },
       report.overview.totalTransferAmount > 0
         ? {
-            label: 'Chuyển trả nội bộ',
+            label: 'Đã chuyển trả',
             value: `${formatVND(report.overview.totalTransferAmount, false)} đ`,
-            subtext: `${report.overview.transferCount} giao dịch đã ghi nhận`,
+            subtext: `${report.overview.transferCount} giao dịch đã chuyển`,
             iconName: 'ArrowRightLeft',
             accentColor: [124, 58, 237],
             surfaceColor: [245, 243, 255],
@@ -2165,10 +2170,10 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             valueColor: [109, 40, 217],
           }
         : {
-            label: 'Chi hộ nhiều nhất',
+            label: 'Chi nhiều nhất',
             value: topPayer ? `${formatVND(topPayer.paidExpense, false)} đ` : '0 đ',
             subtext: topPayer
-              ? `${topPayer.memberName} (${topPayerPct}% tổng đoàn)`
+              ? `${topPayer.memberName} (${topPayerPct}% tổng chi)`
               : 'Chưa phát sinh',
             iconName: 'Award',
             accentColor: [124, 58, 237],
@@ -2183,7 +2188,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     pageWidth
   );
 
-  // 2 Biểu đồ đặt song song 2 cột (Cơ cấu Hạng mục & Tiến độ theo Ngày) kèm Icon
+  // 2 Biểu đồ đặt song song 2 cột (Chi tiêu theo Hạng mục & Chi tiêu theo Ngày) kèm Icon
   cursorY = drawSideBySideOverviewCharts(
     doc,
     activeFont,
@@ -2194,13 +2199,13 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     pageWidth
   );
 
-  // PHẦN 02: QUYẾT TOÁN & CHUYỂN KHOẢN CUỐI KỲ
+  // PHẦN 02: QUYẾT TOÁN CHIA TIỀN
   cursorY = drawSectionHeading(
     doc,
     activeFont,
     '02',
-    'CÂN ĐỐI THU CHI & KẾT QUẢ QUYẾT TOÁN',
-    `${report.settlement.simplifiedDebts.length} lệnh chuyển khoản tối ưu`,
+    'CÂN ĐỐI THU CHI & QUYẾT TOÁN',
+    `${report.settlement.simplifiedDebts.length} giao dịch tất toán`,
     marginX,
     cursorY,
     pageWidth
@@ -2218,7 +2223,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
 
   const hasAnyTransfers = report.overview.totalTransferAmount > 0;
 
-  // Bảng 2.1: Bảng cân đối tổng hợp từng thành viên
+  // Bảng 2.1: Bảng cân đối tổng hợp từng thành viên (Cột cuối Trạng thái canh phải)
   if (typeof autoTableFn === 'function') {
     const balanceHead = hasAnyTransfers
       ? [
@@ -2226,9 +2231,9 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             'Thành viên',
             { content: 'Đã chi (đ)', styles: { halign: 'right' } },
             { content: 'Phải chịu (đ)', styles: { halign: 'right' } },
-            { content: 'Chuyển ròng (đ)', styles: { halign: 'right' } },
+            { content: 'Đã chuyển (đ)', styles: { halign: 'right' } },
             { content: 'Số dư cuối (đ)', styles: { halign: 'right' } },
-            { content: 'Trạng thái', styles: { halign: 'center' } },
+            { content: 'Trạng thái', styles: { halign: 'right' } },
           ],
         ]
       : [
@@ -2237,7 +2242,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             { content: 'Đã chi (đ)', styles: { halign: 'right' } },
             { content: 'Phải chịu (đ)', styles: { halign: 'right' } },
             { content: 'Số dư cuối (đ)', styles: { halign: 'right' } },
-            { content: 'Trạng thái', styles: { halign: 'center' } },
+            { content: 'Trạng thái', styles: { halign: 'right' } },
           ],
         ];
 
@@ -2295,14 +2300,14 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
             2: { cellWidth: 30, halign: 'right' },
             3: { cellWidth: 30, halign: 'right' },
             4: { cellWidth: 32, halign: 'right', fontStyle: 'bold' },
-            5: { cellWidth: 'auto', halign: 'center' },
+            5: { cellWidth: 'auto', halign: 'right' },
           }
         : {
             0: { cellWidth: 38, fontStyle: 'bold' },
             1: { cellWidth: 36, halign: 'right' },
             2: { cellWidth: 36, halign: 'right' },
             3: { cellWidth: 38, halign: 'right', fontStyle: 'bold' },
-            4: { cellWidth: 'auto', halign: 'center' },
+            4: { cellWidth: 'auto', halign: 'right' },
           },
       didParseCell: (data: any) => {
         const balColIdx = hasAnyTransfers ? 4 : 3;
@@ -2322,14 +2327,14 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     cursorY = ((doc as any).lastAutoTable?.finalY || cursorY + 14) + 3.8;
   }
 
-  // Bảng 2.2: KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN CUỐI CÙNG (Nổi bật nhất trên Trang 1)
+  // Bảng 2.2: DANH SÁCH CHUYỂN KHOẢN QUYẾT TOÁN (Nổi bật nhất trên Trang 1, cột cuối canh phải)
   cursorY = ensurePageSpace(doc, cursorY, 22);
   drawIconBadge(doc, 'Send', marginX, cursorY - 0.5, 4.4, [15, 118, 110], [204, 251, 241]);
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(8.8);
   doc.setTextColor(...COLOR_TEAL_DARK);
   doc.text(
-    'KẾT QUẢ CHUYỂN KHOẢN QUYẾT TOÁN CUỐI CÙNG (TẤT TOÁN 1 LẦN)',
+    'DANH SÁCH CHUYỂN KHOẢN QUYẾT TOÁN',
     marginX + 5.6,
     cursorY + 2.8
   );
@@ -2341,7 +2346,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
       `${idx + 1}`,
       `${d.fromMemberName} → ${d.toMemberName}`,
       formatVND(d.amount, false),
-      d.toBankInfo || 'Chưa cập nhật STK nhận',
+      d.toBankInfo || 'Chưa cập nhật STK',
     ]);
 
     autoTableFn.call(doc, {
@@ -2351,13 +2356,13 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
         [
           { content: '#', styles: { halign: 'center' } },
           '', // Vẽ tiêu đề "Người chuyển → Người nhận" bằng vector arrow trong didDrawCell
-          { content: 'Số tiền cần chuyển (đ)', styles: { halign: 'right' } },
-          'Tài khoản ngân hàng nhận',
+          { content: 'Số tiền chuyển (đ)', styles: { halign: 'right' } },
+          { content: 'Tài khoản nhận', styles: { halign: 'right' } },
         ],
       ],
       body: hasDebts
         ? simplifiedBody
-        : [['—', 'Tất cả thành viên đã cân bằng công nợ', '0', '—']],
+        : [['—', 'Tất cả thành viên đã cân bằng thu chi', '0', '—']],
       margin: { left: marginX, right: marginX, bottom: 14 },
       styles: {
         font: activeFont,
@@ -2379,7 +2384,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
         0: { cellWidth: 10, halign: 'center', textColor: COLOR_MUTED },
         1: { cellWidth: 56, fontStyle: 'bold' },
         2: { cellWidth: 42, halign: 'right', fontStyle: 'bold', textColor: COLOR_TEAL_DARK },
-        3: { cellWidth: 'auto', fontStyle: 'bold', textColor: COLOR_SLATE },
+        3: { cellWidth: 'auto', halign: 'right', fontStyle: 'bold', textColor: COLOR_SLATE },
       },
       didParseCell: (data: any) => {
         if (data.section === 'body' && data.column.index === 1 && hasDebts) {
@@ -2430,7 +2435,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
   }
 
   // ==========================================================================
-  // PHẦN 03: SỔ CHI TIẾT CHI TIÊU TOÀN CHUYẾN ĐI (Tối ưu dòng gọn để 42 mục vừa khít 1 trang)
+  // PHẦN 03: DANH SÁCH CHI TIẾT KHOẢN CHI (Tối ưu dòng gọn để 42 mục vừa khít 1 trang)
   // ==========================================================================
   if (cursorY > 195) {
     doc.addPage();
@@ -2441,8 +2446,8 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     doc,
     activeFont,
     '03',
-    'SỔ CHI TIẾT CHI TIÊU & CHUYỂN KHOẢN',
-    `${report.rows.length} giao dịch theo trình tự thời gian`,
+    'DANH SÁCH CHI TIẾT KHOẢN CHI',
+    `${report.rows.length} giao dịch theo thời gian`,
     marginX,
     cursorY,
     pageWidth
@@ -2455,7 +2460,7 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
         'Thời gian',
         'Nội dung khoản chi',
         'Người chi',
-        'Phạm vi',
+        'Chia cho',
         'Hạng mục',
         { content: 'Số tiền (đ)', styles: { halign: 'right' } },
       ],
@@ -2486,8 +2491,8 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
                 {
                   content:
                     report.overview.transferCount > 0
-                      ? `TỔNG CHI TIÊU TOÀN CHUYẾN ĐI (${report.overview.expenseCount} khoản chi • Chuyển trả: ${formatVND(report.totalTransferAmount, false)} đ)`
-                      : `TỔNG CHI TIÊU TOÀN CHUYẾN ĐI (${report.overview.expenseCount} khoản chi)`,
+                      ? `TỔNG CHI TIÊU CHUYẾN ĐI (${report.overview.expenseCount} khoản chi • Đã chuyển: ${formatVND(report.totalTransferAmount, false)} đ)`
+                      : `TỔNG CHI TIÊU CHUYẾN ĐI (${report.overview.expenseCount} khoản chi)`,
                   colSpan: 6,
                   styles: { halign: 'right', fontStyle: 'bold', textColor: COLOR_INK },
                 },
