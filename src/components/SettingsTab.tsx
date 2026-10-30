@@ -1214,21 +1214,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
 
-        <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
-          <span>
-            Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
-          </span>
-          {reportPreview.memberSummary ? (
-            <span className="font-mono">
-              Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
-              {' · '}
-              Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
+        <div className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] text-slate-600">
+          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+            <span>
+              Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
             </span>
-          ) : (
-            <span className="font-mono">
-              Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
-            </span>
-          )}
+            {reportPreview.memberSummary ? (
+              <span className="font-mono">
+                Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
+                {' · '}
+                Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
+              </span>
+            ) : (
+              <span className="font-mono">
+                Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
+              </span>
+            )}
+          </div>
+          <p className="text-[10.5px] text-slate-500 leading-snug">
+            {reportPreview.memberSummary
+              ? `Gồm: Thống kê thu chi cá nhân, biểu đồ danh mục, số tiền tất toán cuối & chi tiết các khoản tham gia của ${reportPreview.memberSummary.memberName}.`
+              : `Gồm 4 phần: Tổng quan (kèm biểu đồ) • Chia tiền & lệnh chuyển cuối (${reportPreview.settlement.simplifiedDebts.length} lệnh) • Sổ chi tiết • Phụ lục riêng ${reportPreview.memberAppendices.length} trang cho từng thành viên.`}
+          </p>
         </div>
       </section>
     </div>

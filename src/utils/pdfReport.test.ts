@@ -17,7 +17,14 @@ const mockConfig: TripConfig = {
 };
 
 const mockMembers: Member[] = [
-  { id: 'm1', name: 'Minh Anh', avatarColor: '#0f766e' },
+  {
+    id: 'm1',
+    name: 'Minh Anh',
+    avatarColor: '#0f766e',
+    bankName: 'Vietcombank',
+    accountNo: '0123456789',
+    accountHolder: 'NGUYEN MINH ANH',
+  },
   { id: 'm2', name: 'Hoàng Nam', avatarColor: '#0369a1' },
   { id: 'm3', name: 'Thảo Vy', avatarColor: '#b45309' },
 ];
@@ -91,7 +98,7 @@ const mockExpenses: ExpenseRecord[] = [
   },
 ];
 
-test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) loại bỏ khoản đã xóa và sắp xếp theo thời gian', () => {
+test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) có đủ Tổng quan, Chia tiền, Chi tiết và Phụ lục từng cá nhân', () => {
   const report = buildExpenseReportData({
     config: mockConfig,
     members: mockMembers,
@@ -106,19 +113,61 @@ test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) loại bỏ 
   assert.equal(report.totalTransferAmount, 50000);
   assert.equal(report.memberSummary, null);
 
-  // Kiểm tra sắp xếp theo thời gian tăng dần
+  // 1. Kiểm tra Overview (Tổng quan + Biểu đồ Danh mục + Ngày)
+  assert.equal(report.overview.totalExpenseAmount, 750000);
+  assert.equal(report.overview.averagePerMember, 250000);
+  assert.equal(report.overview.expenseCount, 2);
+  assert.equal(report.overview.transferCount, 1);
+  assert.equal(report.overview.byCategory.length, 2);
+  assert.equal(report.overview.byCategory[0].categoryName, 'Ăn uống');
+  assert.equal(report.overview.byCategory[0].amount, 450000);
+  assert.equal(report.overview.byCategory[0].percentage, 60);
+  assert.equal(report.overview.byCategory[1].categoryName, 'Di chuyển');
+  assert.equal(report.overview.byCategory[1].amount, 300000);
+  assert.equal(report.overview.byCategory[1].percentage, 40);
+  assert.equal(report.overview.byDay.length, 1);
+  assert.equal(report.overview.byDay[0].label, 'Ngày 1 (24/10/2026)');
+  assert.equal(report.overview.byDay[0].amount, 750000);
+
+  // 2. Kiểm tra Settlement (Chia tiền & Quyết toán cuối cùng)
+  assert.equal(report.settlement.balances.length, 3);
+  const m1Bal = report.settlement.balances.find((b) => b.memberId === 'm1');
+  const m2Bal = report.settlement.balances.find((b) => b.memberId === 'm2');
+  const m3Bal = report.settlement.balances.find((b) => b.memberId === 'm3');
+  assert.ok(m1Bal && m2Bal && m3Bal);
+  // m1: đã chi 450k, phải chịu 300k, nhận chuyển 50k => balance = +100k
+  assert.equal(m1Bal.balance, 100000);
+  // m2: đã chi 300k, phải chịu 300k, đã chuyển 50k => balance = +50k
+  assert.equal(m2Bal.balance, 50000);
+  // m3: đã chi 0, phải chịu 150k => balance = -150k
+  assert.equal(m3Bal.balance, -150000);
+
+  // Gợi ý chuyển khoản tối ưu: Thảo Vy chuyển 100k cho Minh Anh và 50k cho Hoàng Nam
+  assert.equal(report.settlement.simplifiedDebts.length, 2);
+  const toM1 = report.settlement.simplifiedDebts.find((d) => d.toMemberId === 'm1');
+  assert.ok(toM1);
+  assert.equal(toM1.fromMemberName, 'Thảo Vy');
+  assert.equal(toM1.amount, 100000);
+  assert.ok(toM1.toBankInfo.includes('Vietcombank'));
+
+  // 3. Kiểm tra Sổ chi tiết sắp xếp theo thời gian tăng dần
   assert.equal(report.rows[0].id, 'exp_2');
   assert.equal(report.rows[0].date, '24/10/2026 08:15');
-  assert.equal(report.rows[0].title, 'Thuê xe máy 2 ngày');
-  assert.equal(report.rows[0].payerName, 'Hoàng Nam');
-  assert.equal(report.rows[0].amountFormatted, '300.000');
-  assert.equal(report.rows[0].typeLabel, 'Di chuyển');
-
+  assert.equal(report.rows[0].participantsSummary, 'Minh Anh, Hoàng Nam');
   assert.equal(report.rows[2].id, 'exp_3');
   assert.equal(report.rows[2].typeLabel, 'Chuyển trả');
+  assert.equal(report.rows[2].participantsSummary, 'Hoàng Nam -> Minh Anh');
+
+  // 4. Kiểm tra Phụ lục cá nhân (3 trang tương ứng 3 thành viên)
+  assert.equal(report.memberAppendices.length, 3);
+  const m1App = report.memberAppendices.find((a) => a.memberId === 'm1');
+  assert.ok(m1App);
+  assert.equal(m1App.paidRows.length, 1); // trả exp_1
+  assert.equal(m1App.participatedRows.length, 3); // thụ hưởng exp_1, exp_2 và nhận chuyển exp_3
+  assert.equal(m1App.byCategory.length, 2); // Ăn uống (150k) + Di chuyển (150k)
 });
 
-test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo Vy) chỉ lấy khoản có liên quan', () => {
+test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo Vy) chỉ tạo phụ lục của thành viên đó', () => {
   const report = buildExpenseReportData({
     config: mockConfig,
     members: mockMembers,
@@ -128,7 +177,6 @@ test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo V
   });
 
   assert.equal(report.scopeLabel, 'Thành viên: Thảo Vy');
-  // Thảo Vy chỉ tham gia exp_1 (Lẩu gà lá é), không tham gia exp_2 hay exp_3
   assert.equal(report.rows.length, 1);
   assert.equal(report.rows[0].id, 'exp_1');
   assert.equal(report.rows[0].memberShare, 150000);
@@ -136,6 +184,9 @@ test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo V
   assert.equal(report.memberSummary.paidExpense, 0);
   assert.equal(report.memberSummary.owedExpense, 150000);
   assert.equal(report.memberSummary.balance, -150000);
+  assert.equal(report.memberAppendices.length, 1);
+  assert.equal(report.memberAppendices[0].memberName, 'Thảo Vy');
+  assert.equal(report.memberAppendices[0].finalSettlementActions.length, 2);
   assert.equal(report.suggestedFileName, 'bao-cao-da-lat-mua-suong-2026-thao-vy.pdf');
 });
 
