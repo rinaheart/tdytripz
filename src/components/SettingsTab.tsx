@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   Check,
@@ -11,6 +11,7 @@ import {
   CreditCard,
   Eye,
   EyeOff,
+  FileDown,
   FolderKanban,
   KeyRound,
   Link2,
@@ -41,7 +42,8 @@ import type {
   SplitMode,
   TripConfig,
 } from '../types';
-import { copyToClipboard, generateUUID } from '../utils/format';
+import { copyToClipboard, formatVND, generateUUID } from '../utils/format';
+import { buildExpenseReportData, exportExpenseReportPdf } from '../utils/pdfReport';
 import { MemberAvatar } from './MemberAvatar';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
 
@@ -120,6 +122,35 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [showRawCodeGs, setShowRawCodeGs] = useState<boolean>(false);
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [confirmResetDemo, setConfirmResetDemo] = useState<boolean>(false);
+
+  const [reportFilterMemberId, setReportFilterMemberId] = useState<string>('all');
+  const [exportingPdf, setExportingPdf] = useState<boolean>(false);
+
+  const reportPreview = useMemo(
+    () =>
+      buildExpenseReportData({
+        config,
+        members,
+        categories,
+        expenses,
+        filterMemberId: reportFilterMemberId,
+      }),
+    [config, members, categories, expenses, reportFilterMemberId]
+  );
+
+  const handleExportPdfReport = async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      await exportExpenseReportPdf(reportPreview);
+      onShowToast('Đã xuất báo cáo PDF');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Lỗi khi tạo file PDF';
+      onShowToast(msg);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   useEffect(() => {
     setGasUrlInput(gasUrl);
@@ -1139,6 +1170,68 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </section>
         </div>
       )}
+
+      {/* MỤC PHỤ: XUẤT BÁO CÁO CHI TIÊU (PDF QUA CDN, KHÔNG BUNDLE VÀO PWA) */}
+      <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <FileDown aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
+            <h3 className="text-xs font-bold text-slate-900 truncate">
+              Xuất báo cáo chi tiêu
+            </h3>
+          </div>
+          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600 shrink-0">
+            PDF • On-demand
+          </span>
+        </div>
+
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <select
+            aria-label="Phạm vi xuất báo cáo chi tiêu"
+            value={reportFilterMemberId}
+            onChange={(e) => setReportFilterMemberId(e.target.value)}
+            className="flex-1 min-w-0 min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold text-slate-800 focus:border-brand"
+          >
+            <option value="all">Toàn bộ chuyến đi ({members.length} thành viên)</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>
+                Theo thành viên: {m.name}
+              </option>
+            ))}
+          </select>
+
+          <button
+            type="button"
+            disabled={exportingPdf || reportPreview.rows.length === 0}
+            onClick={handleExportPdfReport}
+            className="min-h-[38px] px-4 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+          >
+            <FileDown
+              aria-hidden="true"
+              className={`w-3.5 h-3.5 ${exportingPdf ? 'animate-bounce' : ''}`}
+            />
+            <span>{exportingPdf ? 'Đang tải & tạo PDF…' : 'Xuất báo cáo PDF'}</span>
+          </button>
+        </div>
+
+        <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
+          <span>
+            Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
+          </span>
+          {reportPreview.memberSummary ? (
+            <span className="font-mono">
+              Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
+              {' · '}
+              Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
+            </span>
+          ) : (
+            <span className="font-mono">
+              Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
+            </span>
+          )}
+        </div>
+      </section>
     </div>
   );
 };
+

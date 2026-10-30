@@ -1,6 +1,6 @@
 {
-  "summary": "Kế hoạch thiết kế lại giao diện Tổng quan, Header và Thanh điều hướng dưới theo phong cách Minimal Finance Dashboard (tối ưu cho Mobile-first), giữ nguyên tông màu và độ bo góc trung tính hiện tại (8px/4px).",
-  "updatedAt": "2026-10-19T07:11:47.781562235Z",
-  "requestFeedback": true,
-  "userFacing": true
+  "summary":  "Kế hoạch chi tiết giai đoạn tiếp theo cho TdyTrip: Loại bỏ dữ liệu demo, nghiên cứu đối sánh Tricount/Splitwise/Spliit, thiết kế luồng First-Run (Tự tải từ Google Sheet hoặc Wizard 2 bước), cơ chế Archive/Reset chuyến đi, 3 tính năng nâng cao (Đánh dấu đã trả 1 chạm, Copy nhanh quyết toán Zalo/Messenger, Bộ lọc Của tôi) kèm hệ thống Wireframe ASCII Mobile-First chi tiết.",
+  "updatedAt":  "2026-10-25T23:48:50.194476808Z",
+  "requestFeedback":  true,
+  "userFacing":  true
 }
