@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildExpenseReportData, formatSpentAtReportVN, sanitizeFileNameSegment } from './pdfReport';
+import {
+  buildExpenseReportData,
+  formatSpentAtReportVN,
+  sanitizeFileNameSegment,
+  shortenCategoryLabelForTable,
+} from './pdfReport';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
 
 const mockConfig: TripConfig = {
@@ -154,6 +159,7 @@ test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) có đủ T�
   assert.equal(report.rows[0].id, 'exp_2');
   assert.equal(report.rows[0].date, '24/10/2026 08:15');
   assert.equal(report.rows[0].participantsSummary, 'Minh Anh, Hoàng Nam');
+  assert.equal(report.rows[0].compactTypeLabel, 'Di chuyển');
   assert.equal(report.rows[2].id, 'exp_3');
   assert.equal(report.rows[2].typeLabel, 'Chuyển trả');
   assert.equal(report.rows[2].participantsSummary, 'Hoàng Nam -> Minh Anh');
@@ -190,7 +196,10 @@ test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo V
   assert.equal(report.suggestedFileName, 'bao-cao-da-lat-mua-suong-2026-thao-vy.pdf');
 });
 
-test('formatSpentAtReportVN & sanitizeFileNameSegment hoạt động chính xác', () => {
+test('formatSpentAtReportVN, sanitizeFileNameSegment & shortenCategoryLabelForTable hoạt động chính xác', () => {
   assert.equal(formatSpentAtReportVN('2026-10-24 19:30'), '24/10/2026 19:30');
   assert.equal(sanitizeFileNameSegment('Đà Lạt 2026!'), 'da-lat-2026');
+  assert.equal(shortenCategoryLabelForTable('Vé đi/về (máy bay/tàu xe)'), 'Vé đi/về');
+  assert.equal(shortenCategoryLabelForTable('Lưu trú (KS/homestay)'), 'Lưu trú');
 });
+
