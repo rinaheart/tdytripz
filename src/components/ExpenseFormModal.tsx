@@ -13,6 +13,8 @@ import {
   X,
 } from 'lucide-react';
 import { sortCategoriesTailOrder } from '../config';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
+import { canMemberModifyExpense } from '../services/syncService';
 import type {
   Category,
   ExpenseRecord,
@@ -32,6 +34,8 @@ import {
   toDatetimeLocalValue,
 } from '../utils/format';
 import { splitByShares, splitEqual, validateExactSplits } from '../utils/math';
+
+const EXPENSE_DRAFT_STORAGE_KEY = 'tdytrip_expense_draft_v1';
 
 interface ExpenseFormModalProps {
   isOpen: boolean;
@@ -91,13 +95,25 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
   const [pendingRangeConfirm, setPendingRangeConfirm] = useState<boolean>(false);
   const [confirmDeleteStep, setConfirmDeleteStep] = useState<boolean>(false);
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
+
+  const clearSavedDraft = () => {
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.removeItem(EXPENSE_DRAFT_STORAGE_KEY);
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
     setFormError('');
     setPendingRangeConfirm(false);
     setConfirmDeleteStep(false);
+    setIsSubmitting(false);
 
     const defaultMemberIds = activeMembers.map((m) => m.id);
     const defaultShares: Record<string, number> = {};
@@ -166,27 +182,99 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
         setRecipientId(fallbackRec);
       }
     } else {
-      const newId = generateUUID();
+      let restoredDraft: Record<string, any> | null = null;
+      try {
+        if (typeof sessionStorage !== 'undefined') {
+          const raw = sessionStorage.getItem(EXPENSE_DRAFT_STORAGE_KEY);
+          if (raw) restoredDraft = JSON.parse(raw);
+        }
+      } catch {
+        restoredDraft = null;
+      }
+
+      const newId = restoredDraft?.recordId || generateUUID();
       setRecordId(newId);
-      setRecordType('expense');
-      setTitle('');
-      setRawDigits('');
-      setSelectedMultiplier(config.suggestMultipliers?.[0] || 1000);
+      setRecordType(restoredDraft?.recordType === 'transfer' ? 'transfer' : 'expense');
+      setTitle(restoredDraft?.title || '');
+      setRawDigits(restoredDraft?.rawDigits || '');
+      setSelectedMultiplier(
+        restoredDraft?.selectedMultiplier ?? (config.suggestMultipliers?.[0] || 1000)
+      );
       const validPayer =
-        activeMembers.find((m) => m.id === currentUserId)?.id || activeMembers[0]?.id || '';
+        activeMembers.find((m) => m.id === (restoredDraft?.payer || currentUserId))?.id ||
+        activeMembers[0]?.id ||
+        '';
       setPayer(validPayer);
       const defaultRec =
-        activeMembers.find((m) => m.id !== validPayer)?.id || activeMembers[0]?.id || '';
+        activeMembers.find((m) => m.id === restoredDraft?.recipientId && m.id !== validPayer)?.id ||
+        activeMembers.find((m) => m.id !== validPayer)?.id ||
+        activeMembers[0]?.id ||
+        '';
       setRecipientId(defaultRec);
-      setCategoryId(visibleCategories[0]?.id || 'cat_food');
-      setSpentAt(getNowGMT7(false));
-      setNote('');
-      setSplitMode(config.defaultSplitMode || 'equal');
-      setSelectedMembers(defaultMemberIds);
-      setSharesMap(defaultShares);
-      setExactMap({});
+      setCategoryId(restoredDraft?.categoryId || visibleCategories[0]?.id || 'cat_food');
+      setSpentAt(restoredDraft?.spentAt || getNowGMT7(false));
+      setNote(restoredDraft?.note || '');
+      setSplitMode(restoredDraft?.splitMode || config.defaultSplitMode || 'equal');
+      setSelectedMembers(
+        Array.isArray(restoredDraft?.selectedMembers) && restoredDraft.selectedMembers.length > 0
+          ? restoredDraft.selectedMembers
+          : defaultMemberIds
+      );
+      setSharesMap(restoredDraft?.sharesMap || defaultShares);
+      setExactMap(restoredDraft?.exactMap || {});
     }
   }, [isOpen, editingRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Lưu tạm bản nháp vào sessionStorage khi đang nhập mới чтобы tránh mất dữ liệu nếu trang tự tải lại
+  useEffect(() => {
+    if (!isOpen || editingRecord) return;
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        if (!title && !rawDigits && !note) {
+          sessionStorage.removeItem(EXPENSE_DRAFT_STORAGE_KEY);
+          return;
+        }
+        sessionStorage.setItem(
+          EXPENSE_DRAFT_STORAGE_KEY,
+          JSON.stringify({
+            recordId,
+            recordType,
+            title,
+            rawDigits,
+            selectedMultiplier,
+            payer,
+            recipientId,
+            categoryId,
+            spentAt,
+            note,
+            splitMode,
+            selectedMembers,
+            sharesMap,
+            exactMap,
+          })
+        );
+      }
+    } catch {
+      // Ignore storage errors
+    }
+  }, [
+    isOpen,
+    editingRecord,
+    recordId,
+    recordType,
+    title,
+    rawDigits,
+    selectedMultiplier,
+    payer,
+    recipientId,
+    categoryId,
+    spentAt,
+    note,
+    splitMode,
+    selectedMembers,
+    sharesMap,
+    exactMap,
+  ]);
 
   const digitCount = rawDigits.length;
   const numericBase = parseInt(rawDigits || '0', 10) || 0;
@@ -219,7 +307,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   }, [numericBase, isShortInput, suggestionChips, selectedMultiplier]);
 
   const handleAmountChange = (val: string) => {
-    const clean = val.replace(/\D/g, '').replace(/^0+/, '');
+    const clean = val.replace(/\D/g, '').replace(/^0+/, '').slice(0, 12);
     setRawDigits(clean);
     if (clean.length >= 1 && clean.length <= 3) {
       const defaultMult = config.suggestMultipliers?.[0] || 1000;
@@ -272,26 +360,22 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   );
 
   const canModifyRecord = useMemo(() => {
-    if (!editingRecord || isAdmin) return true;
-    const currentMemberName =
-      members.find((m) => m.id === currentUserId)?.name?.trim().toLowerCase() || '';
-    return (
-      editingRecord.createdBy === currentUserId ||
-      editingRecord.payer === currentUserId ||
-      (currentMemberName !== '' &&
-        (String(editingRecord.createdBy || '').trim().toLowerCase() === currentMemberName ||
-          String(editingRecord.payer || '').trim().toLowerCase() === currentMemberName))
+    if (!editingRecord) return config.tripStatus !== 'completed';
+    return canMemberModifyExpense(
+      editingRecord,
+      currentUserId,
+      members,
+      isAdmin,
+      config.tripStatus
     );
-  }, [editingRecord, isAdmin, currentUserId, members]);
+  }, [editingRecord, isAdmin, currentUserId, members, config.tripStatus]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  const handleCloseModal = () => {
+    clearSavedDraft();
+    onClose();
+  };
+
+  const modalRef = useModalAccessibility<HTMLDivElement>(isOpen, handleCloseModal);
 
   if (!isOpen) return null;
 
@@ -315,10 +399,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setFormError('');
 
     if (!canModifyRecord) {
-      setFormError('Bạn chỉ được sửa/xóa khoản do mình tạo hoặc chi trả.');
+      setFormError('Bạn chỉ được sửa/xóa khoản do mình tạo hoặc mở quyền Admin.');
       return;
     }
 
@@ -390,7 +475,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           : { exactAmounts: exactMap },
       categoryId: recordType === 'transfer' ? 'cat_other' : categoryId,
       spentAt,
-      createdBy: editingRecord ? editingRecord.createdBy : currentUserId,
+      createdBy: editingRecord ? editingRecord.createdBy || editingRecord.payer : currentUserId,
       createdAt: editingRecord ? editingRecord.createdAt : nowSec,
       updatedBy: currentUserId,
       updatedAt: nowSec,
@@ -399,6 +484,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       syncStatus: 'pending',
     };
 
+    clearSavedDraft();
+    setIsSubmitting(true);
     onSave(finalRecord, baseRev);
   };
 
@@ -411,6 +498,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="expense-form-title"
@@ -427,7 +515,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           </h2>
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleCloseModal}
             aria-label="Đóng"
             className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
           >
@@ -467,7 +555,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-3.5 flex-1">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain space-y-3.5 flex-1">
           {formError && (
             <div
               role="alert"
@@ -556,6 +644,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   id="expense-title-input"
                   name="title"
                   type="text"
+                  maxLength={120}
                   autoComplete="off"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -692,6 +781,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   id="transfer-title-input"
                   name="transferTitle"
                   type="text"
+                  maxLength={120}
                   autoComplete="off"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
@@ -721,7 +811,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                     setSpentAt(getYesterdayGMT7(spentAt));
                     setPendingRangeConfirm(false);
                   }}
-                  className="min-h-[30px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition-colors"
+                  className="min-h-[34px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
                 >
                   Hôm qua
                 </button>
@@ -731,7 +821,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                     setSpentAt(getNowGMT7(false));
                     setPendingRangeConfirm(false);
                   }}
-                  className="min-h-[30px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors"
+                  className="min-h-[34px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Clock aria-hidden="true" className="w-3 h-3" />
                   <span>Bây giờ</span>
@@ -877,7 +967,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                             type="button"
                             onClick={() => adjustShare(m.id, -1)}
                             aria-label={`Giảm suất ${m.name}`}
-                            className="w-9 h-9 rounded-sm border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors"
+                            className="w-10 h-10 rounded-sm border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                           >
                             <Minus aria-hidden="true" className="w-4 h-4" />
                           </button>
@@ -888,7 +978,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                             type="button"
                             onClick={() => adjustShare(m.id, 1)}
                             aria-label={`Tăng suất ${m.name}`}
-                            className="w-9 h-9 rounded-sm border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors"
+                            className="w-10 h-10 rounded-sm border border-slate-300 flex items-center justify-center text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                           >
                             <Plus aria-hidden="true" className="w-4 h-4" />
                           </button>
@@ -967,11 +1057,12 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               id="expense-note-input"
               name="note"
               type="text"
+              maxLength={300}
               autoComplete="off"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Ghi chú ngắn…"
-              className="w-full min-h-[40px] px-3.5 py-1.5 rounded-sm border border-slate-300 text-xs text-slate-800"
+              className="w-full min-h-[42px] px-3.5 py-1.5 rounded-sm border border-slate-300 text-xs text-slate-800"
             />
           </div>
 
@@ -1022,16 +1113,16 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           <div className="pt-1 flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleCloseModal}
               className="min-h-[46px] px-4 rounded-sm border border-slate-300 text-slate-700 font-semibold text-sm hover:bg-slate-100 transition-colors"
             >
               Đóng
             </button>
             <button
               type="submit"
-              disabled={recordType === 'expense' && splitMode === 'exact' && !exactValidation.valid}
+              disabled={isSubmitting || (recordType === 'expense' && splitMode === 'exact' && !exactValidation.valid)}
               className={`flex-1 min-h-[46px] px-5 rounded-sm font-bold text-sm text-white shadow-sm transition-colors ${
-                recordType === 'expense' && splitMode === 'exact' && !exactValidation.valid
+                isSubmitting || (recordType === 'expense' && splitMode === 'exact' && !exactValidation.valid)
                   ? 'bg-slate-300 cursor-not-allowed'
                   : pendingRangeConfirm
                   ? 'bg-amber-600 hover:bg-amber-700'

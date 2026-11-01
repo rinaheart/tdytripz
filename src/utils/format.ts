@@ -297,6 +297,20 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 }
 
 /**
+ * Chuẩn hóa chuỗi tiếng Việt không dấu để tìm kiếm nhanh trên thiết bị di động
+ * Ví dụ: "Phở Thìn Bờ Hồ" -> "pho thin bo ho"
+ */
+export function normalizeSearchText(text: string): string {
+  if (!text) return '';
+  return String(text)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .trim();
+}
+
+/**
  * Sinh UUID v4 chuẩn cho từng khoản chi
  */
 export function generateUUID(): string {
@@ -309,3 +323,4 @@ export function generateUUID(): string {
     return v.toString(16);
   });
 }
+

@@ -341,6 +341,3 @@ export const DEFAULT_EXPENSES: ExpenseRecord[] = [
     syncStatus: 'synced',
   },
 ];
-
-export { GOOGLE_APPS_SCRIPT_CODE } from './assets/gasCode';
-

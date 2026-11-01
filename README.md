@@ -1,112 +1,107 @@
-# TdyTrip — Quản lý & Chia tiền Chuyến đi (Mobile-First PWA)
+# TdyTrip — Ứng dụng Chia Tiền & Quản Lý Chi Tiêu Nhóm
 
-Ứng dụng web (SPA / Mobile-First PWA) quản lý chi tiêu và quyết toán chia tiền tinh gọn cho nhóm nhỏ (~5 người) trong các chuyến đi ngắn ngày. Hỗ trợ hoạt động **Offline-First**, đồng bộ hai chiều với **Google Sheets** qua **Google Apps Script (`Code.gs`)**, và xuất **Báo cáo Chi tiêu PDF** chuyên nghiệp.
+**TdyTrip** là ứng dụng web (PWA) thiết kế theo hướng **Mobile-first** và **Offline-first**, giúp nhóm bạn ghi chép khoản chi chung, tự động tối ưu hóa giao dịch quyết toán và đồng bộ hai chiều với **Google Sheets**.
 
 ---
 
-## 1. Điểm nổi bật (MVP Tinh gọn & Mobile-First)
+## 1. Tính năng cốt lõi
 
-- **Thiết kế tối ưu cho nhóm du lịch & công tác:**
-  - Giao diện 1 cột ưu tiên thao tác một tay trên điện thoại, độ tương phản đạt chuẩn **WCAG AAA** (bảng màu `#000777` Navy, chữ và số tiền `tabular-nums` rõ nét ngoài trời).
-  - Chọn nhanh danh tính thành viên (**"Bạn là ai?"**) ngay khi mở app, không bắt buộc đăng nhập phức tạp.
-- **Số học nguyên VND tuyệt đối (`100% Integer Math`):**
-  - Mọi phép chia đều (`equal`), chia theo hệ số/suất (`shares`), hoặc nhập số chính xác (`exact`) đều tính bằng số nguyên `₫`.
-  - Phần dư (`1₫ – 4₫`) được phân bổ deterministically (cố định theo `hash(expenseId + memberId)`), đảm bảo **Tổng các phần chia === Tổng tiền gốc** và **Tổng số dư toàn nhóm === 0 ₫**.
-- **Quyết toán tối giản (Không phụ thuộc VietQR):**
-  - Tự động rút gọn số lần chuyển khoản giữa các thành viên (chế độ **Tối giản** hoặc **Từng cặp**).
-  - Mỗi khoản cần chuyển chỉ gồm **2 nút Copy nguyên bản**:
-    1. **STK:** Chỉ copy đúng chuỗi số tài khoản (ví dụ: `0011004567890`), không kèm chữ hay ký tự phụ.
-    2. **Số tiền:** Chỉ copy đúng số nguyên viết liền (ví dụ: `2500000`), dán thẳng vào ứng dụng ngân hàng.
-- **Xuất Báo cáo Chi tiêu PDF chuyên nghiệp (On-Demand CDN, `0 KB` Bundle Overhead):**
-  - Tích hợp tại **Cài đặt → Xuất báo cáo chi tiêu**, tự động tải `jspdf`, `jspdf-autotable` và font tiếng Việt `Roboto` qua CDN chỉ khi người dùng bấm xuất file.
-  - **Bố cục Executive Dashboard hiện đại & tinh gọn:**
-    - **Trang 1 (Tổng quan & Quyết toán):** Hero Masthead nền Slate-Navy (`#0F172A`), 4 thẻ KPI tổng quan, 2 biểu đồ ngang song song (**Chi tiêu theo Hạng mục** & **Chi tiêu theo Ngày**) kèm icon Lucide độ phân giải 4x Retina, biểu đồ so sánh **Đã chi & Phải chịu** kèm avatar thành viên, bảng cân đối thu chi và **Danh sách chuyển khoản quyết toán** nổi bật với mũi tên vector (`→`).
-    - **Trang 2 (Danh sách chi tiết khoản chi):** Tối ưu mật độ dòng để hiển thị trọn vẹn lịch sử giao dịch theo thời gian, gộp cột phạm vi chia đều thành `xx người` và hàng tổng cộng riêng biệt.
-    - **Phụ lục cá nhân (Mỗi thành viên 1 trang):** 4 thẻ KPI cá nhân (`ĐÃ CHI`, `PHẢI CHỊU`, `GIAO DỊCH TẤT TOÁN`, `SỐ DƯ CUỐI`), thẻ kết quả quyết toán cá nhân kèm công thức tính nhanh, biểu đồ chi phí theo hạng mục và bảng các khoản thành viên đã chi. Tất cả các bảng đều tự động canh phải cột cuối cùng.
-- **Đồng bộ hai chiều với Google Sheets (Offline-First & Kiểm soát xung đột `rev`):**
-  - Lưu trữ tức thì trên `localStorage` kèm hàng đợi `syncQueue`, tự động gom nhóm (**Batch Upsert**) khi có mạng trở lại.
-  - Cơ chế khóa đồng bộ `LockService` + kiểm tra phiên bản `baseRev` chống ghi đè dữ liệu khi nhiều thành viên nhập liệu cùng lúc.
+- **Ghi chép & Chia tiền linh hoạt:**
+  - Hỗ trợ 3 chế độ chia: **Chia đều (`equal`)**, **Theo hệ số/cổ phần (`shares`)**, và **Nhập số tiền cụ thể (`exact`)**.
+  - Làm tròn số nguyên VND và tự động phân bổ phần dư (`remainder`) minh bạch, đảm bảo tổng tiền chia khớp 100% với khoản chi gốc.
+- **Quyết toán tối ưu (Debt Simplification):**
+  - Thuật toán Greedy Matching rút gọn số lượng giao dịch chuyển khoản giữa các thành viên xuống mức tối thiểu.
+  - Bảng đối soát chi tiết từng thành viên (**Đã chi**, **Phải trả**, **Chênh lệch**) và tạo nội dung tin nhắn tổng hợp kết quả + số tài khoản ngân hàng chỉ với 1 chạm.
+- **Mô hình Nhóm Tin Cậy (Trusted Group):**
+  - Không yêu cầu đăng nhập tài khoản cá nhân phức tạp.
+  - Phân biệt rõ **Người trả tiền (`payer`)** và **Người tạo khoản chi (`createdBy`)**.
+  - Cho phép chuyển ngữ cảnh thành viên 1 chạm (**"Chuyển sang [Tên] & Sửa ngay"**) để hỗ trợ nhau chỉnh sửa nhanh trên mọi thiết bị.
+- **Offline-first & Đồng bộ Google Sheets an toàn:**
+  - Lưu trữ cục bộ (`localStorage`) kết hợp hàng đợi `syncQueue` tuần tự có khóa chống ghi đè (`LockService` trên Google Apps Script).
+  - Tự động chống trùng lặp giao dịch khi mạng chập chờn (`Idempotent Retry` qua `operationId`) và bảo vệ dữ liệu đang sửa (`In-flight Edit Protection`).
+- **Quản trị chuyến đi & Xuất báo cáo PDF:**
+  - **Admin PIN** (băm SHA-256 trên Google Sheets `ScriptProperties`) dùng để cấu hình chuyến đi và **Khóa sổ (`completed`)** khi kết thúc hành trình.
+  - Khi chuyến đi đã khóa sổ, mọi thao tác thêm/sửa/xóa đều bị chặn ở cả Client lẫn Server; các khoản chi ngoại tuyến bị từ chối sẽ được giữ nguyên trong danh sách kèm cảnh báo rõ ràng để không mất dữ liệu.
+  - Xuất báo cáo quyết toán **PDF tiếng Việt** trực tuyến (tải động thư viện `pdfmake` qua CDN khi người dùng bấm xuất file, giữ dung lượng tải trang ban đầu siêu nhẹ).
 
 ---
 
 ## 2. Cấu trúc thư mục
 
 ```text
-├── docs/
-│   └── NEXT_PHASE_PLAN.md        # Kế hoạch phát triển giai đoạn tiếp theo (Zero-Demo Onboarding & Wizard)
+/
+├── public/
+│   ├── sw.js                  # Service Worker (Tiered Precache + Stale-While-Revalidate)
+│   ├── manifest.json          # Cấu hình cài đặt PWA
+│   └── version.json           # Tự động đồng bộ từ src/version.ts khi build
 ├── src/
 │   ├── assets/
-│   │   └── gasCode.ts            # Mã nguồn Google Apps Script (export chuỗi raw để copy nhanh trong tab Cài đặt)
+│   │   └── gasCode.ts         # Mã nguồn Google Apps Script (Code.gs) nhúng sẵn trong ứng dụng
 │   ├── components/
-│   │   ├── OverviewTab.tsx       # Tab Tổng quan: Tổng chi, Số dư cá nhân, Theo danh mục & ngày
-│   │   ├── ExpensesTab.tsx       # Tab Chi tiêu: Tìm kiếm, lọc danh mục/người trả, nhóm theo ngày
-│   │   ├── SettlementTab.tsx     # Tab Chia tiền: Danh sách cần chuyển (2 nút Copy STK & Số tiền) + Bảng cân đối
-│   │   ├── SettingsTab.tsx       # Tab Cài đặt: Thành viên/STK, Chuyến đi, Xuất PDF, Hệ thống & Admin PIN
-│   │   ├── ExpenseFormModal.tsx  # Form thêm/sửa khoản chi & chuyển trả riêng (kèm gợi ý bội số 000)
-│   │   ├── ConflictModal.tsx     # Hộp thoại giải quyết xung đột phiên bản (rev) với Google Sheet
-│   │   ├── PWAInstallModal.tsx   # Hộp thoại hướng dẫn cài đặt PWA lên màn hình chính (iOS/Android)
-│   │   ├── WhoAmIModal.tsx       # Chọn thành viên đang sử dụng thiết bị
-│   │   ├── MemberAvatar.tsx      # Avatar chữ cái đầu đạt chuẩn tương phản WCAG AAA
-│   │   └── Navbar.tsx            # Thanh điều hướng cố định dưới đáy màn hình (Mobile Bottom Bar)
-│   ├── hooks/
-│   │   └── usePWAInstall.ts      # Hook quản lý trạng thái cài đặt PWA (beforeinstallprompt & iOS detection)
+│   │   ├── OverviewTab.tsx        # Tab Tổng quan (Bento Grid, thống kê chi tiêu)
+│   │   ├── ExpensesTab.tsx        # Tab Chi tiết khoản chi (Lazy-loaded, Progressive Rendering)
+│   │   ├── SettlementTab.tsx      # Tab Chia tiền & Quyết toán (Lazy-loaded)
+│   │   ├── SettingsTab.tsx        # Tab Cài đặt, Quản trị & Xuất PDF (Lazy-loaded)
+│   │   ├── ExpenseFormModal.tsx   # Modal thêm/sửa khoản chi & lưu nháp tự động
+│   │   ├── ConflictModal.tsx      # Modal xử lý xung đột phiên bản (rev)
+│   │   ├── WhoAmIModal.tsx        # Modal chọn thành viên đang thao tác
+│   │   ├── PWAInstallModal.tsx    # Hướng dẫn cài đặt PWA trên iOS/Android
+│   │   ├── Navbar.tsx             # Thanh điều hướng dưới cùng (Bottom Navigation)
+│   │   └── MemberAvatar.tsx       # Avatar thành viên
 │   ├── services/
-│   │   └── syncService.ts        # Hàng đợi Offline, Batch Sync, Cache & giao tiếp Google Apps Script
+│   │   ├── syncService.ts         # Đồng bộ 2 chiều, hàng đợi Offline, Merge & Idempotency
+│   │   └── syncService.test.ts    # Unit & Contract tests cho đồng bộ, khóa sổ và phân quyền
 │   ├── utils/
-│   │   ├── math.ts               # Thuật toán chia tiền số nguyên VND & tối giản nợ (Greedy Net Balance)
-│   │   ├── format.ts             # Định dạng tiền tệ, ngày giờ GMT+7, đọc số tiền bằng chữ tiếng Việt
-│   │   ├── pdfReport.ts          # Trình tạo Báo cáo Chi tiêu PDF (Executive Dashboard, Vector Icons & AutoTable)
-│   │   └── pdfReport.test.ts     # Unit tests kiểm thử logic chuẩn hóa dữ liệu & báo cáo PDF
-│   ├── config.ts                 # Cấu hình cứng DEFAULT_GAS_URL, danh mục chuẩn & dữ liệu khởi tạo
-│   ├── types.ts                  # Định nghĩa TypeScript interfaces
-│   ├── version.ts                # Quản lý phiên bản ứng dụng (Single Source of Truth)
-│   └── App.tsx                   # Điều phối trạng thái ứng dụng, đồng bộ tự động & thông báo
+│   │   ├── math.ts                # Thuật toán chia tiền, quyết toán & cân đối
+│   │   ├── math.test.ts           # Unit tests cho thuật toán chia tiền & quyết toán
+│   │   ├── pdfReport.ts           # Xuất báo cáo PDF (Online-only qua CDN)
+│   │   ├── pdfReportData.ts       # Chuẩn bị dữ liệu báo cáo PDF
+│   │   └── pdfReport.test.ts      # Unit tests dữ liệu báo cáo PDF
+│   ├── types.ts                   # Định nghĩa TypeScript interfaces
+│   ├── version.ts                 # Nơi duy nhất khai báo APP_VERSION: v[yyyymmdd_HHmm] (GMT+7)
+│   └── App.tsx                    # Điều phối trạng thái, ChunkErrorBoundary & luồng tương tác chính
+└── vite.config.ts                 # Cấu hình Vite + Plugin tự động đồng bộ version & Precache SW
 ```
 
 ---
 
-## 3. Hướng dẫn cài đặt & Chạy dự án (Local Development)
+## 3. Cài đặt & Phát triển (Local Development)
 
-1. **Cài đặt dependencies:**
-   ```bash
-   npm install
-   ```
-2. **Chạy máy chủ phát triển (Port 3000):**
-   ```bash
-   npm run dev
-   ```
-3. **Kiểm tra lỗi TypeScript, Chạy Unit Test & Build Production:**
-   ```bash
-   npm run lint
-   npx tsx --test src/utils/pdfReport.test.ts
-   npm run build
-   ```
+**Yêu cầu:** Node.js `>= 18.x`
+
+```bash
+# 1. Cài đặt dependencies
+npm install
+
+# 2. Chạy môi trường phát triển (http://localhost:3000)
+npm run dev
+
+# 3. Kiểm tra kiểu dữ liệu TypeScript
+npm run lint
+
+# 4. Chạy bộ kiểm thử tự động (Unit & Contract Tests)
+npx tsx --test src/utils/math.test.ts src/utils/pdfReport.test.ts src/services/syncService.test.ts
+
+# 5. Đóng gói bản Production
+npm run build
+```
+
+> **Quy tắc định dạng Version hệ thống:**
+> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyymmdd_HHmm]`** theo múi giờ **GMT+7** (ví dụ: `v20261101_2008`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
 
 ---
 
-## 4. Hướng dẫn kết nối Google Sheets & Cập nhật `Code.gs`
+## 4. Hướng dẫn kết nối Google Sheets (3 bước)
 
-### Bước 1: Cấu hình cứng Link GAS cho cả nhóm
-Mở file `src/config.ts` và đặt URL Web App của bạn tại hằng số `DEFAULT_GAS_URL`:
-```ts
-export const DEFAULT_GAS_URL: string =
-  metaEnv?.VITE_GAS_URL ||
-  'https://script.google.com/macros/s/<DEPLOYMENT_ID_CỦA_BẠN>/exec';
-```
-Khi `DEFAULT_GAS_URL` đã được cấu hình trong `src/config.ts`:
-- Mọi thành viên mở link web app sẽ **tự động kết nối thẳng vào Google Sheet** mà không cần truyền `?gas=...` trên URL mời.
-- Ứng dụng tự động khóa bảo vệ, không cho phép tham số `?gas=...` lạ từ bên ngoài tự ý ghi đè kết nối Sheet.
-
-### Bước 2: Cài đặt hoặc nâng cấp `Code.gs` trên Google Sheets
-1. Mở file Google Sheets của nhóm → chọn **Tiện ích mở rộng (Extensions)** → **Apps Script**.
-2. Trong ứng dụng web, vào tab **Cài đặt** → mục **Hệ thống** → mở khóa **PIN Admin** (mặc định: `1234`) → bấm **Copy Code.gs** (nội dung được đóng gói sẵn trong `src/assets/gasCode.ts`).
-3. Dán đè toàn bộ nội dung vào file `Code.gs` trên trình soạn thảo Apps Script và bấm **Lưu (Ctrl+S)**.
-4. Bấm **Triển khai (Deploy)** → **Quản lý các bản triển khai (Manage deployments)** → bấm biểu tượng cây bút (Chỉnh sửa) → tại mục **Phiên bản (Version)** chọn **Phiên bản mới (New version)** → bấm **Triển khai (Deploy)**.
-   - *Thực thi dưới dạng (Execute as):* **Tôi (Me)**
-   - *Ai có quyền truy cập (Who has access):* **Bất kỳ ai (Anyone)**
-
-### Bước 3: Quản lý mã PIN Admin & Phân quyền Cài đặt
-- Mã PIN Admin chỉ hiển thị tại mục **Cài đặt → Hệ thống** (mặc định: **`1234`**, lưu trong `ScriptProperties` của Google Apps Script).
-- Mọi thao tác cấu hình không dành cho thành viên bình thường — bao gồm **thêm/xóa thành viên**, **thêm/sửa STK thành viên**, **cài đặt chuyến đi & danh mục**, và **cài đặt hệ thống** — đều yêu cầu mở khóa mã PIN Admin trước. Thành viên bình thường chỉ xem danh sách, copy STK, copy link mời và bấm đồng bộ.
-- Để đổi mã PIN: Vào **Cài đặt → Hệ thống** → mở khóa PIN hiện tại → bấm **Đổi PIN** → nhập PIN cũ & PIN mới (tối thiểu 4 ký tự) → bấm **Lưu**.
-- **Bảo vệ chống dò mã PIN (Brute-Force Lockout):** Nếu nhập sai PIN quá **5 lần liên tiếp**, hệ thống tự động tạm khóa xác thực PIN trong **5 phút**.
+1. **Lấy mã Google Apps Script (`Code.gs`):**
+   - Mở ứng dụng **TdyTrip** → vào tab **Cài đặt** → mục **Hệ thống** → bấm **"Sao chép mã Code.gs"**.
+2. **Triển khai Web App trên Google Sheets:**
+   - Tạo một file Google Sheets mới → chọn **Tiện ích mở rộng (Extensions)** → **Apps Script**.
+   - Dán toàn bộ mã vừa sao chép vào `Code.gs` và lưu lại.
+   - Bấm **Triển khai (Deploy)** → **Tùy chọn triển khai mới (New deployment)** → Chọn loại **Ứng dụng web (Web app)**:
+     - *Thực thi dưới dạng (Execute as):* **Tôi (Me)**
+     - *Ai có quyền truy cập (Who has access):* **Bất kỳ ai (Anyone)**
+   - Bấm **Triển khai**, cấp quyền truy cập và sao chép đường dẫn **Web App URL** (`https://script.google.com/macros/s/.../exec`).
+3. **Kết nối vào ứng dụng:**
+   - Quay lại tab **Cài đặt** trong TdyTrip → dán **Web App URL** → bấm **Lưu & Kiểm tra kết nối**.
+   - **Mã PIN Quản trị mặc định:** `2026` (dùng khi mở khóa quyền Quản trị lần đầu; có thể đổi mã PIN mới ngay trong tab Cài đặt).

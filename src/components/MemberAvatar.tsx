@@ -87,7 +87,7 @@ const SIZE_CLASSES: Record<NonNullable<MemberAvatarProps['size']>, string> = {
   lg: 'w-9 h-9 text-sm',
 };
 
-export const MemberAvatar: React.FC<MemberAvatarProps> = ({
+export const MemberAvatar: React.FC<MemberAvatarProps> = React.memo(({
   member,
   size = 'md',
   className = '',
@@ -109,4 +109,5 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = ({
       </span>
     </div>
   );
-};
+});
+

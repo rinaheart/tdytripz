@@ -11,7 +11,7 @@ interface NavbarProps {
   isTripCompleted: boolean;
 }
 
-export const Navbar: React.FC<NavbarProps> = ({
+export const Navbar: React.FC<NavbarProps> = React.memo(({
   activeTab,
   onSelectTab,
   onOpenAddModal,
@@ -105,4 +105,5 @@ export const Navbar: React.FC<NavbarProps> = ({
       </div>
     </nav>
   );
-};
+});
+

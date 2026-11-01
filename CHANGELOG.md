@@ -1,84 +1,71 @@
 # Changelog
 
-Mọi thay đổi quan trọng của dự án **TdyTrip (Chia Tiền Nhóm)** đều được ghi nhận tại file này.
+Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi nhận tại tệp này.
+
+> **Quy ước định dạng phiên bản hệ thống:** `v[yyyymmdd_HHmm]` theo múi giờ **GMT+7**.
 
 ---
 
-## [1.4.1] - 2026-11-01 (`v20261101-1000`)
+## [v20261101_2008] - 2026-11-01
 
-### Tinh chỉnh Báo cáo PDF & Giao diện Cài đặt (`src/utils/pdfReport.ts`, `src/components/SettingsTab.tsx`)
-- **Chuẩn hóa thuật ngữ tự nhiên, ngắn gọn trên toàn bộ báo cáo PDF:**
-  - Thẻ KPI Phụ lục cá nhân: Đổi `"ĐÃ ĐỨNG RA CHI"` $\rightarrow$ **`"ĐÃ CHI"`**, `"PHẦN PHẢI CHỊU"` / `"khoản thụ hưởng"` $\rightarrow$ **`"PHẢI CHỊU"`** (`Tham gia xx khoản chi`), `"LỆNH TẤT TOÁN"` $\rightarrow$ **`"GIAO DỊCH TẤT TOÁN"`**, `"SỐ DƯ CUỐI KỲ"` $\rightarrow$ **`"SỐ DƯ CUỐI"`**.
-  - Tiêu đề biểu đồ & bảng: Đổi `"Thụ hưởng theo Hạng mục"` $\rightarrow$ **`"Chi phí theo Hạng mục"`**, `"Cơ cấu theo Hạng mục"` / `"Tiến độ theo Ngày"` $\rightarrow$ **`"Chi tiêu theo Hạng mục"`** / **`"Chi tiêu theo Ngày"`**, `"CHI HỘ NHIỀU NHẤT"` $\rightarrow$ **`"CHI NHIỀU NHẤT"`**, `"CÁC KHOẢN ... ĐÃ TRỰC TIẾP CHI TRẢ"` $\rightarrow$ **`"CÁC KHOẢN ... ĐÃ CHI"`**, cột `"Phạm vi"` $\rightarrow$ **`"Chia cho"`**.
-- **Đồng bộ canh phải (`halign: 'right'`) cột cuối cùng ở mọi bảng:**
-  - Canh phải cả tiêu đề (`head`) và dữ liệu (`body`/`foot`) cho cột cuối của tất cả 4 bảng: cột **`Trạng thái`** (Bảng 2.1), cột **`Tài khoản nhận`** (Bảng 2.2), và cột **`Số tiền (đ)`** (Bảng 3 & Bảng 4).
-- **Tinh giản mục Xuất báo cáo chi tiêu tại `SettingsTab.tsx`:**
-  - Chỉ hiển thị thông tin cơ bản (**Bản ghi: xx mục** và **Tổng chi tiêu: xx ₫**), loại bỏ dòng mô tả dài dòng bên dưới.
-- **Sửa lỗi kiểm tra kiểu TypeScript (`tsc --noEmit`):**
-  - Đồng bộ import `MemberBalance`, `DebtTransaction` từ `src/types.ts` và lọc thành viên theo `m.active !== false`.
+### Added
+- **Bảo vệ toàn vẹn khi Khóa sổ chuyến đi (`tripStatus: 'completed'`):**
+  - Chặn toàn bộ thao tác tạo mới, chỉnh sửa, xóa khoản chi và cập nhật cấu hình ở cả giao diện lẫn hàm xử lý dữ liệu khi chuyến đi đã khóa sổ.
+  - Khi đồng bộ hàng đợi ngoại tuyến (`syncQueue`) gặp trạng thái `TRIP_COMPLETED` từ Google Sheets, đánh dấu bản ghi là `syncStatus: 'error'` và giữ mục hàng đợi ở trạng thái `nonRetryable: true` để tránh vòng lặp tự động gửi lại vô tận mà không làm mất dữ liệu cục bộ của người dùng.
+  - Bổ sung cảnh báo trực quan khi có khoản chi ngoại tuyến bị từ chối do chuyến đi đã khóa sổ.
+- **Chống trùng lặp & Chống ghi đè khi đồng bộ (`Idempotency & In-flight Race Protection`):**
+  - Gắn mã định danh duy nhất `operationId` cho từng mục trong `syncQueue` và đối chiếu `splitMeta.lastOperationId` trên Google Apps Script (`Code.gs`) để đảm bảo an toàn khi mạng timeout hoặc gửi lại (`Idempotent Retry`).
+  - Bảo vệ khoản chi đang được chỉnh sửa trong lúc tiến trình đồng bộ nền đang chạy (`In-flight Edit Protection`).
+- **Kiểm thử tự động toàn diện (21 Unit & Contract Tests):**
+  - Bổ sung bộ kiểm thử `src/services/syncService.test.ts` bên cạnh `src/utils/math.test.ts` và `src/utils/pdfReport.test.ts` để xác minh quy tắc chỉnh sửa, khóa sổ chuyến đi, hợp nhất dữ liệu (`mergeRemoteAndLocalExpenses`) và xử lý hàng đợi ngoại tuyến.
+- **Chịu lỗi tải gói (Chunk Error Recovery) & Lưu nháp tự động:**
+  - Thêm `ChunkErrorBoundary` và cơ chế tự động khôi phục bản nháp biểu mẫu (`sessionStorage`) nếu trình duyệt cần tải lại khi cập nhật phiên bản mới.
 
----
-
-## [1.4.0] - 2026-10-30 (`v20261030-1425`)
-
-### Tính năng Mới: Xuất Báo cáo Chi tiêu PDF (`src/utils/pdfReport.ts`, `src/components/SettingsTab.tsx`)
-- **Kiến trúc Nạp động qua CDN (Zero-Bundle / On-Demand Loader):**
-  - Tải tự động `jspdf`, `jspdf-autotable` và bộ font tiếng Việt Unicode (`Roboto-Regular.ttf`, `Roboto-Medium.ttf`) chỉ khi người dùng nhấn xuất file tại **Cài đặt → Xuất báo cáo chi tiêu**, giữ nguyên dung lượng bundle PWA (`0 KB` overhead khi sử dụng thông thường).
-  - Hỗ trợ 2 chế độ xuất báo cáo: **Toàn bộ chuyến đi** (Tổng quan + Quyết toán + Danh sách chi tiết + Phụ lục từng thành viên) và **Báo cáo riêng theo từng thành viên**.
-- **Thiết kế Executive Dashboard & Biểu đồ Vector sắc nét:**
-  - **Trang 1 (Tổng quan & Quyết toán):** Hero Masthead nền Slate-Navy (`#0F172A`), 4 ô KPI sắc màu, 2 biểu đồ ngang song song kèm icon danh mục Lucide độ phân giải 4x Retina, biểu đồ so sánh **Đã chi & Phải chịu** kèm avatar thành viên, bảng cân đối thu chi và bảng **Danh sách chuyển khoản quyết toán** với ký hiệu mũi tên vector (`drawVectorArrowSymbol`).
-  - **Trang 2 & Phụ lục cá nhân:** Tối ưu bảng chi tiết 42 khoản chi vừa khít 1 trang A4; rút gọn tên danh mục (`Di chuyển`, `Lưu trú`, `Vé đi/về`); hiển thị gọn `xx người` khi khoản chi chia cho toàn bộ thành viên; mỗi thành viên 1 trang phụ lục riêng biệt.
-- **Kiểm thử Tự động (`src/utils/pdfReport.test.ts`):**
-  - Bổ sung bộ unit test kiểm chứng logic chuẩn hóa dữ liệu báo cáo, rút gọn tên danh mục, định dạng phạm vi chia tiền và tính toán số liệu quyết toán.
-
----
-
-## [1.3.0] - 2026-10-22
-
-### Bảo mật (Security Hardening)
-- **[SEC-01] Xác thực PIN Admin cho `initSeedData` (`src/assets/Code.gs`, `src/services/syncService.ts`, `src/App.tsx`):**
-  - Bắt buộc kiểm tra `verifyPin_(body.adminPin)` trước khi cho phép chạy `initSeedData` trên Google Apps Script, ngăn chặn việc gọi API không xác thực làm ghi đè cấu hình chuyến đi hoặc danh sách số tài khoản thành viên.
-- **[SEC-02] Chống dò mã PIN Admin (`Brute-Force Rate Limiting`) (`src/assets/Code.gs`, `src/services/syncService.ts`):**
-  - Bổ sung bộ đếm số lần nhập sai PIN trong `CacheService` (`ADMIN_PIN_FAIL_COUNT_V2`). Tự động khóa xác thực 5 phút nếu nhập sai liên tiếp 5 lần.
-- **[SEC-03] Định danh thiết bị tạo khoản chi (`creatorToken`) (`src/services/syncService.ts`, `src/assets/Code.gs`, `src/types.ts`):**
-  - Sinh mã `deviceToken` lưu cục bộ trên từng trình duyệt và gắn vào `splitMeta.creatorToken` khi tạo mới khoản chi để ngăn chặn người dùng khác giả mạo `actor` sửa/xóa khoản chi không phải do mình tạo.
-- **[SEC-04] Chống tấn công công thức bảng tính (`Spreadsheet Formula Injection`) (`src/assets/Code.gs`):**
-  - Tự động làm sạch (`sanitizeCellValue_`) mọi chuỗi đầu vào bắt đầu bằng `=`, `+`, `-` (không phải số âm), `@`, `\t`, `\r` bằng tiền tố nháy đơn `'` trước khi ghi vào Google Sheets.
-- **[SEC-05] Khóa bảo vệ `DEFAULT_GAS_URL` trước link lạ `?gas=` (`src/services/syncService.ts`):**
-  - Kiểm tra định dạng URL GAS hợp lệ (`^https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec$`) và chặn không cho phép tham số `?gas=...` từ URL bên ngoài tự động ghi đè `localStorage` khi `DEFAULT_GAS_URL` đã được cấu hình cứng trong `src/config.ts`.
-
-### Hiệu năng (Performance Optimization)
-- **[PERF-01] Cache trạng thái khởi tạo 5 Sheet (`SCHEMA_READY_V2`) (`src/assets/Code.gs`):**
-  - Lưu trạng thái kiểm tra schema và định dạng cột Plain Text (`@`) vào `CacheService` (6 giờ) thay vì chạy lại `setNumberFormat('@')` trên 1.000 dòng ở mỗi request `GET`/`POST`, giúp giảm 3–5 giây độ trễ mỗi lần đồng bộ.
-- **[PERF-02] Ghi dữ liệu hàng loạt 2D (`replaceSheetWithBatchRows_`) (`src/assets/Code.gs`):**
-  - Thay thế vòng lặp `.forEach(writeRowByHeader_)` (gọi `appendRow` từng dòng) trong `handleSaveAdminSettings_` và `handleInitSeedData_` bằng lệnh ghi ma trận 2 chiều `setValues(matrix)` duy nhất, giảm hơn 50 lệnh gọi I/O xuống còn 3 lệnh.
-- **[PERF-03] Read-Through Cache cho `doGet` (`TRIP_SNAPSHOT_V2`) (`src/assets/Code.gs`):**
-  - Cache JSON phản hồi của `doGet` trong `CacheService` (45 giây) và tự động xóa cache (`invalidateSnapshotCache_`) ngay khi có bất kỳ thay đổi dữ liệu nào trong `doPost` hoặc khi lưu trữ (`archiveCurrentTripMenu`).
-- **[PERF-04] Đồng bộ hàng đợi theo lô (`batchUpsertExpenses`) (`src/assets/Code.gs`, `src/services/syncService.ts`):**
-  - Khi thiết bị có từ 2 khoản chi trở lên trong hàng đợi `syncQueue`, tự động gom toàn bộ vào một request `batchUpsertExpenses` duy nhất để chỉ giữ `LockService` 1 lần và đọc bảng `Expenses` 1 lần.
-
-### Tinh gọn tính năng & UI/UX (Mobile-First MVP)
-- **Loại bỏ hoàn toàn các thành phần liên quan đến VietQR (`src/components/SettlementTab.tsx`):**
-  - Giữ trải nghiệm quyết toán tối giản nhất cho nhóm nhỏ (~5 người): chỉ tính toán chính xác số tiền cần chuyển giữa các thành viên.
-  - Cung cấp đúng **2 nút Copy nguyên bản** cho mỗi giao dịch cần chuyển:
-    1. **STK:** Chỉ copy số tài khoản thuần túy (ví dụ: `0011004567890`).
-    2. **Số tiền:** Chỉ copy số nguyên viết liền (ví dụ: `2500000`).
-- **Tập trung Mã PIN Admin về mục Hệ thống & Khóa toàn bộ thao tác quản trị (`src/components/SettingsTab.tsx`, `src/App.tsx`):**
-  - Khung nhập/mở khóa và đổi **Mã PIN Admin** chỉ hiển thị trong mục **Cài đặt → Hệ thống**.
-  - Bắt buộc mở khóa mã PIN Admin trước khi thực hiện bất kỳ thay đổi cấu hình nào: **Thêm/Xóa thành viên**, **Thêm/Đổi STK & thông tin ngân hàng của thành viên**, **Cài đặt chuyến đi & danh mục**, và **Cài đặt hệ thống**. Thành viên bình thường chỉ xem thông tin và bấm Copy STK / Copy link mời / Đồng bộ.
+### Changed
+- **Thống nhất bố cục số tiền & Thông báo (UI/UX):**
+  - Tại tab **Tổng quan (`OverviewTab.tsx`)**, căn phải (`text-right`) hai con số lớn về tiền (**Tổng chi toàn đoàn** và **Tổng tiền cần nhận/trả của thành viên đang chọn**) cùng mức bình quân/người để đồng nhất quy tắc căn phải cho mọi con số tiền tệ.
+  - Căn giữa (`justify-center text-center`) cho các thanh thông báo/toast quan trọng như thông báo **Chuyến đi đã kết thúc — Chế độ chỉ xem** và hệ thống toast nổi.
+- **Đơn giản hóa mô hình Nhóm Tin Cậy (Trusted Group):**
+  - Loại bỏ cơ chế khóa quyền sửa theo thiết bị (`deviceToken` / `creatorToken`) gây bất tiện khi đổi máy hoặc dùng chung thiết bị.
+  - Phân biệt rõ **Người tạo khoản chi (`createdBy`)** và **Người trả tiền (`payer`)**: quyền chỉnh sửa mặc định thuộc về `createdBy` (hoặc Admin), đồng thời hỗ trợ nút **"Chuyển sang [Tên] & Sửa ngay"** chỉ với 1 chạm.
+- **Tối ưu hóa PWA Service Worker & Xuất PDF trực tuyến:**
+  - Chuyển sang cơ chế **Tiered Precache**: chỉ precache các tài nguyên giao diện thiết yếu (Core Shell & Tabs), loại trừ các gói chỉ dùng trực tuyến (`gasCode`, `pdfReport`).
+  - Tính năng xuất báo cáo PDF (`pdfmake` qua CDN) được giới hạn chỉ hoạt động khi có kết nối mạng kèm cơ chế timeout 12 giây và thông báo rõ ràng.
+- **Chuẩn hóa định dạng phiên bản:**
+  - Áp dụng quy tắc phiên bản thống nhất `v[yyyymmdd_HHmm]` (GMT+7) trên toàn hệ thống (`src/version.ts`, `public/version.json`, `public/sw.js`).
 
 ---
 
-## [1.2.0] - 2026-10-21
+## [v20261101_1430] - 2026-11-01
 
-### Đã sửa (Fixed)
-- Khắc phục lỗi xác thực mã PIN Admin (`1234`) trên Google Sheet bằng cách tách `verifyAdminPin` xử lý trực tiếp từ `ScriptProperties` và tự động đồng bộ lại `DEFAULT_GAS_URL` khi phát hiện link cũ trong `localStorage`.
-- Nâng cấp độ tương phản màu sắc cho toàn bộ `MemberAvatar` và chữ phụ đạt chuẩn **WCAG AAA** (tối thiểu `7.1:1`, nền thương hiệu `#000777` Navy `18.1:1`).
+### Added
+- **Quản lý phiên bản tập trung (`src/version.ts`):**
+  - Tạo Single Source of Truth cho `APP_NAME` và `APP_VERSION`.
+  - Bổ sung Vite plugin trong `vite.config.ts` tự động đồng bộ `APP_VERSION` sang `public/version.json`, `public/sw.js` và tự động chèn danh sách tài nguyên vào `dist/sw.js` khi đóng gói.
+- **Thông báo cập nhật phiên bản mới (`Update Banner`):**
+  - Tự động kiểm tra phiên bản mới và hiển thị thanh thông báo cập nhật an toàn (chờ hàng đợi đồng bộ hoàn tất trước khi tải lại trang).
+
+### Changed
+- **Nâng cấp Dependencies:** Cập nhật React 19, Vite 6, Tailwind CSS v4 và TypeScript lên phiên bản ổn định mới nhất.
+- **Dọn dẹp Codebase:** Loại bỏ các thư viện và tệp tin dư thừa không sử dụng để tối ưu tốc độ đóng gói.
 
 ---
 
-## [1.1.0] - 2026-10-21
+## [v20260402_2200] - 2026-04-02
 
-### Thay đổi (Changed)
-- Thiết kế lại toàn bộ tab **Cài đặt (`SettingsTab.tsx`)** theo phong cách tối giản chữ, chia thành 3 phân mục gọn gàng (**Thành viên**, **Chuyến đi**, **Hệ thống**) kèm thanh mở khóa PIN Admin trực tiếp trên đầu trang.
-- Cấu hình cứng `DEFAULT_GAS_URL` trong `src/config.ts` để chia sẻ link web app ngắn gọn cho nhóm bạn.
+### Added
+- **Quản trị chuyến đi & Bảo mật PIN trên Server:**
+  - Hỗ trợ trạng thái chuyến đi (`active` / `completed`) và xác thực mã PIN Quản trị thông qua băm SHA-256 lưu trong `ScriptProperties` của Google Apps Script (PIN mặc định: `2026`).
+- **Tối ưu hiệu năng hiển thị:**
+  - Bổ sung Progressive Rendering (phân trang hiển thị tăng dần) và debounced search cho danh sách chi tiêu lớn.
+
+---
+
+## [v20260401_1200] - 2026-04-01
+
+### Added
+- **Phát hành phiên bản nền tảng (Core Release):**
+  - Quản lý danh sách chi tiêu nhóm với 3 chế độ chia tiền (`equal`, `shares`, `exact`) và phân bổ phần dư chính xác.
+  - Bảng quyết toán công nợ tối ưu hóa số lần chuyển khoản và sao chép nội dung thanh toán nhanh.
+  - Đồng bộ hai chiều với Google Sheets kèm hàng đợi ngoại tuyến (`syncQueue`) và xử lý xung đột phiên bản (`rev`).
+  - Hỗ trợ giao diện Sáng/Tối (Dark Mode) và cài đặt ứng dụng PWA trên thiết bị di động.

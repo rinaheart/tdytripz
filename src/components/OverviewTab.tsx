@@ -52,7 +52,7 @@ export const CATEGORY_ICON_MAP: Record<string, React.FC<{ className?: string }>>
   '📦': Package,
 };
 
-export const OverviewTab: React.FC<OverviewTabProps> = ({
+export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   config,
   members,
   categories,
@@ -178,25 +178,25 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
         </div>
 
         <div className="flex items-baseline justify-between gap-2 py-0.5">
-          <div className="text-[26px] sm:text-3xl leading-none font-mono font-extrabold tracking-tight text-slate-900 tabular-nums">
+          <span className="text-xs font-semibold text-slate-500 shrink-0">
+            Tổng chi toàn đoàn
+          </span>
+          <div className="text-[26px] sm:text-3xl leading-none font-mono font-extrabold tracking-tight text-slate-900 tabular-nums text-right ml-auto">
             {formatVND(totalTripExpense, true)}
           </div>
-          <span className="text-[11px] font-semibold text-slate-400 shrink-0">
-            Tổng chi
-          </span>
         </div>
 
         <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 text-xs">
-          <div className="text-slate-600 font-medium truncate">
+          <span className="text-[11px] font-semibold text-slate-500 tabular-nums shrink-0">
+            {activeExpenses.length} khoản · {activeMemberCount} người
+          </span>
+
+          <div className="text-slate-600 font-medium truncate text-right ml-auto">
             <span>Bình quân: </span>
             <strong className="font-mono font-bold text-slate-800 tabular-nums">
               ~{formatVND(averagePerPerson, false)}/người
             </strong>
           </div>
-
-          <span className="text-[11px] font-semibold text-slate-500 tabular-nums shrink-0">
-            {activeExpenses.length} khoản · {activeMemberCount} người
-          </span>
         </div>
       </section>
 
@@ -236,17 +236,26 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
             </button>
           </div>
 
-          <div
-            className={`text-2xl leading-none font-mono font-extrabold tabular-nums py-0.5 ${
-              myBalance.balance > 0
-                ? 'text-emerald-700'
+          <div className="flex items-baseline justify-between gap-2 py-0.5">
+            <span className="text-xs font-semibold text-slate-500 shrink-0">
+              {myBalance.balance > 0
+                ? 'Tổng cần nhận'
                 : myBalance.balance < 0
-                ? 'text-rose-600'
-                : 'text-slate-800'
-            }`}
-          >
-            {myBalance.balance > 0 ? '+' : ''}
-            {formatVND(myBalance.balance, true)}
+                ? 'Tổng cần trả'
+                : 'Số dư hiện tại'}
+            </span>
+            <div
+              className={`text-2xl sm:text-[26px] leading-none font-mono font-extrabold tabular-nums text-right ml-auto ${
+                myBalance.balance > 0
+                  ? 'text-emerald-700'
+                  : myBalance.balance < 0
+                  ? 'text-rose-600'
+                  : 'text-slate-800'
+              }`}
+            >
+              {myBalance.balance > 0 ? '+' : ''}
+              {formatVND(myBalance.balance, true)}
+            </div>
           </div>
 
           <div className="pt-2 border-t border-slate-100 grid grid-cols-2 gap-3 items-center text-xs">
@@ -393,4 +402,5 @@ export const OverviewTab: React.FC<OverviewTabProps> = ({
       </div>
     </div>
   );
-};
+});
+

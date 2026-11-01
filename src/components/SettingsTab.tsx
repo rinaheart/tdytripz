@@ -30,7 +30,6 @@ import {
   APP_VERSION,
   AVATAR_COLORS,
   BANK_LIST,
-  GOOGLE_APPS_SCRIPT_CODE,
   sortCategoriesTailOrder,
 } from '../config';
 import { buildShareableTripUrl } from '../services/syncService';
@@ -43,7 +42,7 @@ import type {
   TripConfig,
 } from '../types';
 import { copyToClipboard, formatVND, generateUUID } from '../utils/format';
-import { buildExpenseReportData, exportExpenseReportPdf } from '../utils/pdfReport';
+import { buildExpenseReportData } from '../utils/pdfReportData';
 import { MemberAvatar } from './MemberAvatar';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
 
@@ -57,6 +56,9 @@ interface SettingsTabProps {
   adminPin: string;
   gasUrl: string;
   simulateOffline: boolean;
+  pendingSyncCount?: number;
+  isSyncing?: boolean;
+  onSyncNow?: () => Promise<void>;
   onUnlockAdmin: (pin: string) => Promise<{ ok: boolean; error?: string }>;
   onLockAdmin: () => void;
   onChangeAdminPin: (currentPin: string, newPin: string) => Promise<{ ok: boolean; error?: string }>;
@@ -74,7 +76,7 @@ interface SettingsTabProps {
 
 type SettingsSection = 'members' | 'trip' | 'system';
 
-export const SettingsTab: React.FC<SettingsTabProps> = ({
+export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   config,
   members,
   categories,
@@ -83,6 +85,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   isAdmin,
   gasUrl,
   simulateOffline,
+  pendingSyncCount = 0,
+  isSyncing = false,
+  onSyncNow,
   onUnlockAdmin,
   onLockAdmin,
   onChangeAdminPin,
@@ -93,7 +98,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   onTestAndInitSheet,
   onReloadFromSheet,
   onToggleSimulateOffline,
-  onTriggerDemoConflict,
   onResetDemoData,
   onShowToast,
 }) => {
@@ -114,17 +118,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [newCatIcon, setNewCatIcon] = useState<string>('Package');
 
   const [cfgForm, setCfgForm] = useState<TripConfig>(config);
+  const [confirmLockWithPending, setConfirmLockWithPending] = useState<boolean>(false);
 
   const [gasUrlInput, setGasUrlInput] = useState<string>(gasUrl);
   const [testingSheet, setTestingSheet] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
   const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
   const [showRawCodeGs, setShowRawCodeGs] = useState<boolean>(false);
+  const [loadedCodeGs, setLoadedCodeGs] = useState<string>('');
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [confirmResetDemo, setConfirmResetDemo] = useState<boolean>(false);
 
   const [reportFilterMemberId, setReportFilterMemberId] = useState<string>('all');
   const [exportingPdf, setExportingPdf] = useState<boolean>(false);
+  const [pdfExportError, setPdfExportError] = useState<string>('');
 
   const reportPreview = useMemo(
     () =>
@@ -140,12 +147,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleExportPdfReport = async () => {
     if (exportingPdf) return;
+    const isOfflineNow =
+      (typeof navigator !== 'undefined' && !navigator.onLine) || simulateOffline;
+    if (isOfflineNow) {
+      const offlineMsg =
+        'Cần kết nối Internet để xuất báo cáo PDF. Các chức năng ghi chép và quyết toán vẫn hoạt động Offline bình thường.';
+      setPdfExportError(offlineMsg);
+      onShowToast('Cần kết nối Internet để xuất báo cáo PDF');
+      return;
+    }
+
+    setPdfExportError('');
     setExportingPdf(true);
     try {
+      const { exportExpenseReportPdf } = await import('../utils/pdfReport');
       await exportExpenseReportPdf(reportPreview);
       onShowToast('Đã xuất báo cáo PDF');
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Lỗi khi tạo file PDF';
+      setPdfExportError(msg);
       onShowToast(msg);
     } finally {
       setExportingPdf(false);
@@ -216,15 +236,18 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSaveMember = async () => {
     if (!isAdmin || !memForm || !memForm.name.trim()) return;
+    const cleanAccountNo = String(memForm.accountNo || '')
+      .replace(/\s+/g, '')
+      .replace(/^'+/, '');
     const next = members
       .map((m) =>
         m.id === memForm.id
           ? {
               ...memForm,
               name: memForm.name.trim(),
-              bankName: memForm.bankName.trim(),
-              accountNo: memForm.accountNo.replace(/\s+/g, ''),
-              accountHolder: memForm.accountHolder.trim().toUpperCase(),
+              bankName: (memForm.bankName || '').trim(),
+              accountNo: cleanAccountNo,
+              accountHolder: (memForm.accountHolder || '').trim().toUpperCase(),
             }
           : m
       )
@@ -326,15 +349,37 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     });
   };
 
-  const handleSaveTripConfig = async () => {
+  const handleSaveTripConfig = async (forceLockEvenWithPending = false) => {
     if (!isAdmin) return;
+    const isLockingTrip =
+      cfgForm.tripStatus === 'completed' && config.tripStatus !== 'completed';
+    if (
+      isLockingTrip &&
+      (pendingSyncCount > 0 || isSyncing) &&
+      !forceLockEvenWithPending
+    ) {
+      setConfirmLockWithPending(true);
+      onShowToast(`Còn ${pendingSyncCount} khoản chờ đồng bộ! Vui lòng kiểm tra trước khi khóa sổ.`);
+      return;
+    }
+    setConfirmLockWithPending(false);
     await onUpdateConfig(cfgForm);
-    onShowToast('Đã lưu');
+    onShowToast(
+      cfgForm.tripStatus === 'completed' ? 'Đã khóa sổ chuyến đi' : 'Đã lưu cài đặt chuyến đi'
+    );
+  };
+
+  const ensureGasCodeLoaded = async (): Promise<string> => {
+    if (loadedCodeGs) return loadedCodeGs;
+    const mod = await import('../assets/gasCode');
+    setLoadedCodeGs(mod.GOOGLE_APPS_SCRIPT_CODE);
+    return mod.GOOGLE_APPS_SCRIPT_CODE;
   };
 
   const handleCopyCodeGs = async () => {
     if (!isAdmin) return;
-    const ok = await copyToClipboard(GOOGLE_APPS_SCRIPT_CODE);
+    const code = await ensureGasCodeLoaded();
+    const ok = await copyToClipboard(code);
     if (ok) {
       setCopiedCode(true);
       onShowToast('Đã copy Code.gs');
@@ -429,6 +474,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
             <input
               type="text"
               name="newMemberName"
+              maxLength={50}
               autoComplete="off"
               aria-label="Tên thành viên mới"
               disabled={!isAdmin}
@@ -441,13 +487,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                 }
               }}
               placeholder="Thêm thành viên…"
-              className="flex-1 min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-medium"
+              className="flex-1 min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-medium"
             />
             <button
               type="button"
               disabled={!isAdmin}
               onClick={handleAddMember}
-              className="min-h-[38px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+              className="min-h-[40px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
             >
               <Plus aria-hidden="true" className="w-3.5 h-3.5" />
               <span>Thêm</span>
@@ -470,35 +516,38 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                           <div className="text-xs font-bold text-slate-900 truncate">
                             {m.name}
                           </div>
-                          {m.bankName && m.accountNo ? (
+                          {m.accountNo ? (
                             <div className="text-[11px] text-slate-600 font-mono truncate">
-                              {m.bankName} · <strong className="text-slate-800">{m.accountNo}</strong>
-                              {m.accountHolder ? ` · ${m.accountHolder}` : ''}
+                              STK: <strong className="text-slate-900 select-all">{m.accountNo}</strong>
+                              {m.bankName ? ` (${m.bankName})` : ''}
                             </div>
                           ) : (
-                            <div className="text-[11px] text-slate-500">—</div>
+                            <div className="text-[11px] text-slate-400">Chưa có STK</div>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         {/* Nút Copy STK cho user bình thường */}
                         {m.accountNo && (
                           <button
                             type="button"
                             onClick={async () => {
-                              const ok = await copyToClipboard(m.accountNo);
-                              if (ok) onShowToast(`Đã copy: ${m.accountNo}`);
+                              const cleanNo = String(m.accountNo || '')
+                                .replace(/\s+/g, '')
+                                .replace(/^'+/, '');
+                              const ok = await copyToClipboard(cleanNo);
+                              if (ok) onShowToast(`Đã copy STK: ${cleanNo}`);
                             }}
                             aria-label={`Copy STK ${m.name}`}
                             title="Copy STK"
-                            className="w-8 h-8 rounded-sm border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-colors"
+                            className="w-9 h-9 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
                           >
                             <Copy aria-hidden="true" className="w-3.5 h-3.5" />
                           </button>
                         )}
 
-                        {/* Nút sửa thông tin & STK thành viên (Chỉ Admin) */}
+                        {/* Nút sửa tên & STK thành viên (Chỉ Admin) */}
                         <button
                           type="button"
                           disabled={!isAdmin}
@@ -506,7 +555,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                             isEditingThis ? setEditingMemberId(null) : startEditMember(m)
                           }
                           title={isAdmin ? 'Sửa tên & STK' : 'Cần mở PIN ở mục Hệ thống'}
-                          className={`min-h-[32px] px-2.5 rounded-sm bg-brand-soft hover:bg-brand-border/50 text-brand text-xs font-bold flex items-center gap-1 transition-colors ${
+                          className={`min-h-[36px] px-2.5 rounded-lg bg-brand-soft hover:bg-brand-border/50 text-brand text-xs font-bold flex items-center gap-1 transition-colors ${
                             !isAdmin ? 'opacity-40 pointer-events-none select-none' : ''
                           }`}
                         >
@@ -527,7 +576,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                               ? 'Thành viên đã có chi tiêu'
                               : `Xóa ${m.name}`
                           }
-                          className={`w-8 h-8 rounded-sm border flex items-center justify-center transition-colors ${
+                          className={`w-9 h-9 rounded-lg border flex items-center justify-center transition-colors ${
                             !isAdmin
                               ? 'border-slate-200 text-slate-400 opacity-40 pointer-events-none select-none'
                               : usedInExpenses
@@ -541,31 +590,51 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     </div>
 
                     {isEditingThis && memForm && (
-                      <div className="p-2.5 rounded-sm bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="p-2.5 rounded-sm bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <input
                           type="text"
                           name="memberName"
+                          maxLength={50}
                           autoComplete="off"
                           aria-label="Tên thành viên"
                           value={memForm.name}
                           onChange={(e) => setMemForm({ ...memForm, name: e.target.value })}
-                          placeholder="Tên…"
-                          className="w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-semibold"
+                          placeholder="Tên thành viên…"
+                          className="w-full min-h-[38px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-semibold"
+                        />
+                        <input
+                          type="text"
+                          name="accountNo"
+                          maxLength={30}
+                          inputMode="text"
+                          autoComplete="off"
+                          spellCheck={false}
+                          aria-label="Số tài khoản"
+                          value={memForm.accountNo}
+                          onChange={(e) =>
+                            setMemForm({
+                              ...memForm,
+                              accountNo: e.target.value.replace(/\s+/g, '').replace(/^'+/, ''),
+                            })
+                          }
+                          placeholder="Số tài khoản (giữ số 0 đầu)…"
+                          className="w-full min-h-[38px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-mono font-bold"
                         />
                         <div>
                           <input
                             type="text"
                             name="bankName"
+                            maxLength={40}
                             autoComplete="off"
                             spellCheck={false}
-                            aria-label="Ngân hàng"
+                            aria-label="Ngân hàng (tùy chọn)"
                             list="vn-banks-datalist"
                             value={memForm.bankName}
                             onChange={(e) =>
                               setMemForm({ ...memForm, bankName: e.target.value })
                             }
-                            placeholder="Ngân hàng (VCB, MB, TCB…)"
-                            className="w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs"
+                            placeholder="Ngân hàng (tùy chọn)…"
+                            className="w-full min-h-[38px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs"
                           />
                           <datalist id="vn-banks-datalist">
                             {BANK_LIST.map((b) => (
@@ -573,37 +642,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                             ))}
                           </datalist>
                         </div>
-                        <input
-                          type="text"
-                          name="accountNo"
-                          inputMode="numeric"
-                          autoComplete="off"
-                          spellCheck={false}
-                          aria-label="Số tài khoản"
-                          value={memForm.accountNo}
-                          onChange={(e) =>
-                            setMemForm({ ...memForm, accountNo: e.target.value })
-                          }
-                          placeholder="Số tài khoản…"
-                          className="w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-mono font-bold"
-                        />
-                        <input
-                          type="text"
-                          name="accountHolder"
-                          autoComplete="off"
-                          spellCheck={false}
-                          aria-label="Chủ tài khoản"
-                          value={memForm.accountHolder}
-                          onChange={(e) =>
-                            setMemForm({
-                              ...memForm,
-                              accountHolder: e.target.value.toUpperCase(),
-                            })
-                          }
-                          placeholder="CHỦ TÀI KHOẢN…"
-                          className="w-full min-h-[36px] px-2.5 rounded-sm border border-slate-300 bg-white text-xs font-mono uppercase"
-                        />
-                        <div className="sm:col-span-2 flex justify-end gap-1.5">
+                        <div className="sm:col-span-3 flex justify-end gap-1.5">
                           <button
                             type="button"
                             onClick={() => setEditingMemberId(null)}
@@ -642,24 +681,26 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <input
                 type="text"
                 name="tripName"
+                maxLength={80}
                 autoComplete="off"
                 aria-label="Tên chuyến đi"
                 disabled={!isAdmin}
                 value={cfgForm.tripName}
                 onChange={(e) => setCfgForm({ ...cfgForm, tripName: e.target.value })}
                 placeholder="Tên chuyến đi…"
-                className="w-full min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
               />
               <input
                 type="text"
                 name="location"
+                maxLength={80}
                 autoComplete="off"
                 aria-label="Địa điểm"
                 disabled={!isAdmin}
                 value={cfgForm.location}
                 onChange={(e) => setCfgForm({ ...cfgForm, location: e.target.value })}
                 placeholder="Địa điểm…"
-                className="w-full min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
               />
               <input
                 type="date"
@@ -714,13 +755,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   type="button"
                   aria-pressed={cfgForm.tripStatus === 'completed'}
                   disabled={!isAdmin}
-                  onClick={() =>
+                  onClick={() => {
+                    const nextStatus =
+                      cfgForm.tripStatus === 'completed' ? 'active' : 'completed';
                     setCfgForm({
                       ...cfgForm,
-                      tripStatus:
-                        cfgForm.tripStatus === 'completed' ? 'active' : 'completed',
-                    })
-                  }
+                      tripStatus: nextStatus,
+                    });
+                    if (nextStatus === 'active') {
+                      setConfirmLockWithPending(false);
+                    }
+                  }}
                   className={`min-h-[34px] px-3 rounded-xl border text-xs font-semibold flex items-center gap-1 transition-colors ${
                     cfgForm.tripStatus === 'completed'
                       ? 'bg-amber-50 border-amber-300 text-amber-800'
@@ -735,13 +780,59 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
               <button
                 type="button"
                 disabled={!isAdmin}
-                onClick={handleSaveTripConfig}
+                onClick={() => handleSaveTripConfig(false)}
                 className="min-h-[36px] px-4 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 transition-colors"
               >
                 <Save aria-hidden="true" className="w-3.5 h-3.5" />
                 <span>Lưu</span>
               </button>
             </div>
+
+            {confirmLockWithPending && pendingSyncCount > 0 && (
+              <div
+                role="alert"
+                className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-2"
+              >
+                <div className="font-bold">
+                  Cảnh báo: Còn {pendingSyncCount} khoản chi chưa đồng bộ lên Google Sheet!
+                </div>
+                <p className="text-[11px] text-amber-900 leading-relaxed">
+                  Khi chuyến đi đã khóa sổ, mọi thao tác ghi mới sẽ bị chặn. Bạn nên đồng bộ hết các giao dịch đang chờ trước khi khóa sổ. Dữ liệu trong hàng đợi sẽ được giữ nguyên, không bị xóa.
+                </p>
+                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                  {onSyncNow && (
+                    <button
+                      type="button"
+                      disabled={isSyncing}
+                      onClick={async () => {
+                        await onSyncNow();
+                        setConfirmLockWithPending(false);
+                      }}
+                      className="min-h-[34px] px-3 py-1 rounded-lg bg-brand hover:bg-brand-hover text-white font-bold transition-colors"
+                    >
+                      {isSyncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay trước khi khóa'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleSaveTripConfig(true)}
+                    className="min-h-[34px] px-3 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white font-bold transition-colors"
+                  >
+                    Vẫn khóa sổ (giữ hàng đợi)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmLockWithPending(false);
+                      setCfgForm({ ...cfgForm, tripStatus: 'active' });
+                    }}
+                    className="min-h-[34px] px-3 py-1 rounded-lg border border-amber-300 bg-white text-amber-900 font-semibold"
+                  >
+                    Hủy
+                  </button>
+                </div>
+              </div>
+            )}
           </section>
 
           {/* Danh mục */}
@@ -809,13 +900,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       <button
                         type="button"
                         disabled={!isAdmin}
                         onClick={() => handleToggleCategoryHidden(cat)}
                         aria-label={cat.hidden ? `Hiện ${cat.name}` : `Ẩn ${cat.name}`}
-                        className="w-8 h-8 rounded-sm border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-colors"
+                        className="w-9 h-9 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-colors"
                         title={cat.hidden ? 'Hiện' : 'Ẩn'}
                       >
                         {cat.hidden ? (
@@ -830,7 +921,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                           disabled={!isAdmin}
                           onClick={() => handleDeleteCategory(cat)}
                           aria-label={`Xóa ${cat.name}`}
-                          className="w-8 h-8 rounded-sm border border-rose-200 hover:bg-rose-50 text-rose-600 flex items-center justify-center transition-colors"
+                          className="w-9 h-9 rounded-lg border border-rose-200 hover:bg-rose-50 text-rose-600 flex items-center justify-center transition-colors"
                           title="Xóa"
                         >
                           <Trash2 aria-hidden="true" className="w-3.5 h-3.5" />
@@ -878,21 +969,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                     <input
                       type={showPinText ? 'text' : 'password'}
                       name="trip_admin_pin_code"
+                      maxLength={20}
                       inputMode="numeric"
                       autoComplete="one-time-code"
                       spellCheck={false}
                       value={pinInput}
                       onChange={(e) => setPinInput(e.target.value)}
-                      placeholder="PIN (1234)…"
+                      placeholder={isConnectedSheet ? 'Nhập PIN Admin…' : 'PIN Demo (1234)…'}
                       aria-label="PIN Admin"
-                      className="w-32 sm:w-36 min-h-[36px] pl-3 pr-7 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-mono text-slate-900 focus:border-brand"
+                      className="w-32 sm:w-36 min-h-[38px] pl-3 pr-8 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-mono text-slate-900 focus:border-brand"
                     />
                     <button
                       type="button"
                       onClick={() => setShowPinText((prev) => !prev)}
                       aria-label={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
                       title={showPinText ? 'Ẩn mã PIN' : 'Hiện mã PIN'}
-                      className="absolute right-1.5 p-1 text-slate-500 hover:text-slate-800 transition-colors"
+                      className="absolute right-0.5 w-8 h-8 flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 transition-colors cursor-pointer"
                     >
                       {showPinText ? (
                         <EyeOff aria-hidden="true" className="w-3.5 h-3.5" />
@@ -904,7 +996,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   <button
                     type="submit"
                     disabled={verifyingPin || !pinInput.trim()}
-                    className="min-h-[36px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold transition-colors shrink-0"
+                    className="min-h-[38px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold transition-colors shrink-0 cursor-pointer"
                   >
                     {verifyingPin ? 'Đang mở…' : 'Mở khóa'}
                   </button>
@@ -1074,11 +1166,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                   type="button"
                   aria-expanded={showRawCodeGs}
                   disabled={!isAdmin}
-                  onClick={() => {
+                  onClick={async () => {
                     if (!isAdmin) return;
+                    if (!showRawCodeGs) {
+                      await ensureGasCodeLoaded();
+                    }
                     setShowRawCodeGs((prev) => !prev);
                   }}
-                  className="min-h-[34px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
+                  className="min-h-[36px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 transition-colors"
                 >
                   {showRawCodeGs ? 'Ẩn Code.gs' : 'Xem Code.gs'}
                 </button>
@@ -1091,7 +1186,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                       if (!isAdmin) return;
                       setConfirmResetDemo(true);
                     }}
-                    className="min-h-[34px] px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1 transition-colors"
+                    className="min-h-[36px] px-3 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold flex items-center gap-1 transition-colors"
                   >
                     <RotateCcw aria-hidden="true" className="w-3.5 h-3.5" />
                     <span>Reset mẫu</span>
@@ -1105,14 +1200,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
                         setConfirmResetDemo(false);
                         onResetDemoData();
                       }}
-                      className="min-h-[34px] px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors"
+                      className="min-h-[36px] px-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-colors"
                     >
                       Xác nhận
                     </button>
                     <button
                       type="button"
                       onClick={() => setConfirmResetDemo(false)}
-                      className="min-h-[34px] px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs transition-colors"
+                      className="min-h-[36px] px-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs transition-colors"
                     >
                       Hủy
                     </button>
@@ -1122,7 +1217,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
               {showRawCodeGs && isAdmin && (
                 <pre className="p-3 rounded-xl bg-slate-950 text-slate-100 font-mono text-[11px] leading-relaxed overflow-x-auto max-h-60 border border-slate-800 select-all">
-                  <code>{GOOGLE_APPS_SCRIPT_CODE}</code>
+                  <code>{loadedCodeGs}</code>
                 </pre>
               )}
             </div>
@@ -1214,6 +1309,23 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
 
+        {pdfExportError && (
+          <div
+            role="alert"
+            className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-2"
+          >
+            <span className="flex-1 min-w-[200px] font-medium">{pdfExportError}</span>
+            <button
+              type="button"
+              onClick={handleExportPdfReport}
+              disabled={exportingPdf}
+              className="min-h-[32px] px-3 py-1 rounded-lg bg-amber-700 hover:bg-amber-800 text-white text-xs font-bold shrink-0 transition-colors cursor-pointer"
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+
         <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
           <span>
             Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
@@ -1233,5 +1345,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
       </section>
     </div>
   );
-};
+});
+
 

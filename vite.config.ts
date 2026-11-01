@@ -46,9 +46,17 @@ function syncVersionJsonPlugin() {
       const assetsDir = path.resolve(distDir, 'assets');
       if (!fs.existsSync(distSwPath) || !fs.existsSync(assetsDir)) return;
 
+      // Phân tầng Precache (Phase 3 Audit):
+      // - Tier A (Core Shell) & Tier B (Essential Features: index, ExpensesTab, SettlementTab, SettingsTab, Modals, pdfReportData, CSS) -> Precache 100% lúc cài đặt.
+      // - Tier C (Online-Only / On-Demand: gasCode-*.js [chỉ Admin copy Code.gs] & pdfReport-*.js [engine vẽ PDF tải CDN]) -> Không precache và không cache runtime trong SW.
+      const OPTIONAL_RUNTIME_CHUNK_PREFIXES = ['gasCode-', 'pdfReport-'];
+
       const assetFiles = fs
         .readdirSync(assetsDir)
         .filter((file) => /\.(js|css|svg|png|jpg|jpeg|webp|woff2?)$/i.test(file))
+        .filter(
+          (file) => !OPTIONAL_RUNTIME_CHUNK_PREFIXES.some((prefix) => file.startsWith(prefix))
+        )
         .sort()
         .map((file) => `/assets/${file}`);
 
@@ -77,7 +85,10 @@ function syncVersionJsonPlugin() {
   };
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ command }) => {
+  if (command === 'build') {
+    process.env.NODE_ENV = 'production';
+  }
   return {
     plugins: [react(), tailwindcss(), syncVersionJsonPlugin()],
     resolve: {
@@ -91,4 +102,3 @@ export default defineConfig(() => {
     },
   };
 });
-

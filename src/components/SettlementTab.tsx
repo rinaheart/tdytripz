@@ -24,7 +24,7 @@ interface SettlementTabProps {
   onShowToast: (msg: string) => void;
 }
 
-export const SettlementTab: React.FC<SettlementTabProps> = ({
+export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
   members,
   expenses,
   balances,
@@ -119,7 +119,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
               type="button"
               aria-pressed={viewMode === 'simplified'}
               onClick={() => setViewMode('simplified')}
-              className={`min-h-[30px] px-2.5 py-0.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 viewMode === 'simplified'
                   ? 'bg-white text-brand shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -131,7 +131,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
               type="button"
               aria-pressed={viewMode === 'pairwise'}
               onClick={() => setViewMode('pairwise')}
-              className={`min-h-[30px] px-2.5 py-0.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+              className={`min-h-[34px] px-3 py-1 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 viewMode === 'pairwise'
                   ? 'bg-white text-brand shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -179,17 +179,19 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
                         <ArrowRight aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-bold text-emerald-700 truncate">{recipient.name}</span>
                       </div>
-                      {(recipient.bankName || cleanAccountNo) && (
-                        <div className="text-xs font-mono text-slate-500 truncate">
-                          {recipient.bankName && (
-                            <strong className="text-slate-700">{recipient.bankName}</strong>
-                          )}
-                          {recipient.bankName && cleanAccountNo && (
-                            <span className="mx-1.5 text-slate-300">•</span>
-                          )}
-                          {cleanAccountNo && <span>{cleanAccountNo}</span>}
-                        </div>
-                      )}
+                      <div className="text-xs font-mono text-slate-600 truncate">
+                        {cleanAccountNo ? (
+                          <>
+                            <span className="text-slate-500">STK nhận: </span>
+                            <strong className="text-slate-900 select-all">{cleanAccountNo}</strong>
+                            {recipient.bankName ? (
+                              <span className="text-slate-500"> ({recipient.bankName})</span>
+                            ) : null}
+                          </>
+                        ) : (
+                          <span className="text-slate-400 italic font-sans">Chưa cập nhật STK</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="text-right shrink-0">
@@ -210,32 +212,32 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Chỉ duy nhất 2 nút Copy tinh gọn: STK (raw) & Số tiền (raw integer) */}
+                  {/* Chỉ duy nhất 2 nút Copy tinh gọn: STK (raw string giữ số 0 đầu) & Số tiền (raw integer) */}
                   <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => handleCopyAccountNo(txKey, recipient)}
-                      className="min-h-[38px] px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
+                      className="min-h-[40px] px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
                     >
                       {copiedKey === `stk_${txKey}` ? (
                         <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                       ) : (
                         <Copy aria-hidden="true" className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                       )}
-                      <span>STK</span>
+                      <span>Copy STK</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleCopyRawAmount(txKey, tx.amount)}
-                      className="min-h-[38px] px-3 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
+                      className="min-h-[40px] px-3 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
                     >
                       {copiedKey === `amt_${txKey}` ? (
                         <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
                       ) : (
                         <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
                       )}
-                      <span>Số tiền</span>
+                      <span>Copy Số tiền</span>
                     </button>
                   </div>
                 </div>
@@ -261,6 +263,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
 
         <section className="px-2.5 py-2.5 sm:p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs overflow-hidden">
           <table className="w-full text-left border-collapse table-auto">
+            <caption className="sr-only">Bảng cân đối thu chi theo từng thành viên</caption>
             <thead>
               <tr className="border-b border-slate-100 text-[10px] sm:text-[11px] uppercase tracking-tight sm:tracking-wider font-bold text-slate-400">
                 <th scope="col" className="pb-2 pr-1">Thành viên</th>
@@ -331,4 +334,5 @@ export const SettlementTab: React.FC<SettlementTabProps> = ({
       </div>
     </div>
   );
-};
+});
+

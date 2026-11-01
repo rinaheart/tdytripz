@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Download, PlusSquare, Share, Smartphone, X } from 'lucide-react';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 
 interface PWAInstallModalProps {
   isOpen: boolean;
@@ -16,19 +17,13 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
   onInstallNative,
   onClose,
 }) => {
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  const modalRef = useModalAccessibility<HTMLDivElement>(isOpen, onClose);
 
   if (!isOpen) return null;
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="pwa-install-title"
@@ -53,13 +48,13 @@ export const PWAInstallModal: React.FC<PWAInstallModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Đóng"
-            className="w-9 h-9 -mr-1 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
           >
             <X aria-hidden="true" className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-4 space-y-3 text-xs text-slate-700">
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] space-y-3 text-xs text-slate-700">
           {isInstallable ? (
             <div className="space-y-3">
               <p className="leading-relaxed">

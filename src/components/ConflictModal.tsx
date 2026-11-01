@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AlertTriangle, Check, X } from 'lucide-react';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import type { ExpenseRecord, Member, SyncQueueItem } from '../types';
 import { formatVND } from '../utils/format';
 
@@ -21,21 +22,14 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
   onClose,
 }) => {
   const [selectedChoice, setSelectedChoice] = useState<'server' | 'client'>('client');
+  const isOpen = Boolean(conflictItem && serverRecord);
+  const modalRef = useModalAccessibility<HTMLDivElement>(isOpen, onClose);
 
   useEffect(() => {
     if (conflictItem) {
       setSelectedChoice('client');
     }
   }, [conflictItem]);
-
-  useEffect(() => {
-    if (!conflictItem || !serverRecord) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [conflictItem, serverRecord, onClose]);
 
   if (!conflictItem || !serverRecord) return null;
 
@@ -52,6 +46,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="conflict-modal-title"
@@ -163,7 +158,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
           </button>
         </div>
 
-        <div className="p-4 border-t border-slate-200 bg-slate-50 flex items-center gap-2">
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t border-slate-200 bg-slate-50 flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}

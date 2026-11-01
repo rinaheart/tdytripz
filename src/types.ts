@@ -43,7 +43,7 @@ export interface SplitMeta {
   shares?: Record<string, number>;
   exactAmounts?: Record<string, number>;
   selectedMembers?: string[];
-  creatorToken?: string;
+  lastOperationId?: string;
 }
 
 export interface ExpenseRecord {
@@ -71,12 +71,15 @@ export type SyncActionType = 'UPSERT_EXPENSE' | 'DELETE_EXPENSE';
 
 export interface SyncQueueItem {
   queueId: string;
+  operationId?: string;
   action: SyncActionType;
   record: ExpenseRecord;
   baseRev: number;
   status: SyncStatus;
   retryCount: number;
   lastAttemptAt?: number;
+  errorCode?: string;
+  nonRetryable?: boolean;
   errorMessage?: string;
   serverRecord?: ExpenseRecord;
   adminPin?: string;

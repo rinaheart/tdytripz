@@ -1,5 +1,6 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Check, UserCheck, X } from 'lucide-react';
+import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import type { Member } from '../types';
 import { MemberAvatar } from './MemberAvatar';
 
@@ -20,14 +21,7 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
   onSelectMember,
   onClose,
 }) => {
-  useEffect(() => {
-    if (!isOpen || !onClose) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
+  const modalRef = useModalAccessibility<HTMLDivElement>(isOpen, onClose);
 
   if (!isOpen) return null;
 
@@ -37,6 +31,7 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
 
   return (
     <div
+      ref={modalRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="whoami-modal-title"
@@ -68,7 +63,7 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
           )}
         </div>
 
-        <div className="p-4 overflow-y-auto overscroll-contain grid grid-cols-1 gap-2.5">
+        <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain grid grid-cols-1 gap-2.5">
           {activeMembers.map((member) => {
             const isSelected = member.id === currentUserId;
             return (
