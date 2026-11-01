@@ -1,6 +1,27 @@
 # Changelog
 
-Mọi thay đổi quan trọng của dự án **Chia Tiền Nhóm — Hà Nội 3N2Đ** đều được ghi nhận tại file này.
+Mọi thay đổi quan trọng của dự án **TdyTrip (Chia Tiền Nhóm)** đều được ghi nhận tại file này.
+
+---
+
+## [1.4.0] - 2026-10-30 (`v20261030-1425`)
+
+### Tính năng Mới: Xuất Báo cáo Chi tiêu PDF (`src/utils/pdfReport.ts`, `src/components/SettingsTab.tsx`)
+- **Kiến trúc Nạp động qua CDN (Zero-Bundle / On-Demand Loader):**
+  - Tải tự động `jspdf`, `jspdf-autotable` và bộ font tiếng Việt Unicode (`Roboto-Regular.ttf`, `Roboto-Bold.ttf`) kèm cơ chế fallback đa CDN chỉ khi người dùng nhấn xuất file tại **Cài đặt → Xuất báo cáo chi tiêu**, giữ nguyên dung lượng bundle PWA (`0 KB` overhead khi sử dụng thông thường).
+  - Hỗ trợ 2 chế độ xuất báo cáo: **Toàn bộ chuyến đi** (Báo cáo tổng hợp + Quyết toán + Chi tiết chi tiêu + Phụ lục từng thành viên) và **Báo cáo riêng theo từng thành viên**.
+- **Thiết kế Trang 1 phong cách Executive Business Trip Expense Report:**
+  - **Protruding Travel Icon Tabs & Hero Banner (`drawExecutiveMasthead`):** 4 tab icon du lịch vector (`BannerTrain`, `BannerTraveler`, `BannerPlane`, `BannerCoins`) nhô phía trên dải banner xanh lá (`#43A04D`), đi kèm dải thông tin chuyến đi 2 cột × 3 hàng trên nền kem ấm (`#F5E8CB`) và khối nổi bật **Tổng chi tiêu** trên nền xanh sage (`#B7DDA2`).
+  - **Đồng bộ Bảng biểu, Biểu đồ Vector & Icon Danh mục:**
+    - Header bảng sử dụng tông Slate-Green (`#4E6D63`) và Green (`#43A04D`) với đường kẻ dọc trắng phân tách cột; dòng tổng cộng (`TỔNG CHI TIÊU`, `TỔNG CỘNG`) nổi bật trên nền xanh sage (`#B7DDA2`).
+    - Tích hợp biểu đồ vector sắc nét vẽ qua HTML5 Canvas: cơ cấu chi tiêu theo danh mục kèm icon Lucide (`1.1`), biến động chi tiêu theo ngày (`1.2`), và biểu đồ cột đôi so sánh **Đã chi** vs **Phần chịu** giữa các thành viên.
+  - **Chuẩn hóa Thuật ngữ, Ký hiệu Vector & Căn lề Bảng:**
+    - Tinh gọn thuật ngữ rõ nghĩa: `ĐÃ CHI`, `PHẦN CHỊU`, `CHÊNH LỆCH`, rút gọn danh mục `Di chuyển tại chỗ` thành `Di chuyển`, hiển thị gọn `xx người` khi khoản chi chia cho toàn bộ thành viên.
+    - Sử dụng ký hiệu mũi tên vector (`→`) trong bảng lệnh chuyển khoản tất toán và tự động canh phải (`halign: 'right'`) cột cuối cùng của tất cả các bảng.
+  - **Khối Ghi chú, Xác nhận Quyết toán & Chân trang Thương hiệu (`drawPageOneNotesAndVerification`, `stampPageFooters`):**
+    - Trang 1 tích hợp khung **Ghi chú** viền xanh bo góc bên trái, khối chữ ký **Hệ thống tổng hợp** & **Xác nhận quyết toán** bên phải, cùng dải ribbon chân trang màu xanh lá (`#43A04D`) bo góc tròn.
+- **Kiểm thử Tự động (`src/utils/pdfReport.test.ts`):**
+  - Bổ sung bộ unit test kiểm chứng logic chuẩn hóa dữ liệu báo cáo, rút gọn tên danh mục, định dạng phạm vi chia tiền và tính toán số liệu quyết toán.
 
 ---
 

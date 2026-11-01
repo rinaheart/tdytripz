@@ -1,12 +1,12 @@
-# Chia Tiền Nhóm — Hà Nội 3N2Đ (Mobile-First MVP)
+# TdyTrip — Quản lý & Chia tiền Chuyến đi (Mobile-First PWA)
 
-Ứng dụng web (SPA / Mobile-First) quản lý chi tiêu và quyết toán chia tiền tinh gọn cho nhóm nhỏ (~5 người) trong các chuyến đi ngắn ngày (~3 ngày 2 đêm). Hỗ trợ hoạt động **Offline-First** và đồng bộ hai chiều với **Google Sheets** qua **Google Apps Script (`Code.gs`)**.
+Ứng dụng web (SPA / Mobile-First PWA) quản lý chi tiêu và quyết toán chia tiền tinh gọn cho nhóm nhỏ (~5 người) trong các chuyến đi ngắn ngày. Hỗ trợ hoạt động **Offline-First**, đồng bộ hai chiều với **Google Sheets** qua **Google Apps Script (`Code.gs`)**, và xuất **Báo cáo Chi tiêu PDF** chuyên nghiệp.
 
 ---
 
 ## 1. Điểm nổi bật (MVP Tinh gọn & Mobile-First)
 
-- **Thiết kế tối ưu cho nhóm ~5 người, chuyến đi 3N2Đ:**
+- **Thiết kế tối ưu cho nhóm du lịch & công tác:**
   - Giao diện 1 cột ưu tiên thao tác một tay trên điện thoại, độ tương phản đạt chuẩn **WCAG AAA** (bảng màu `#000777` Navy, chữ và số tiền `tabular-nums` rõ nét ngoài trời).
   - Chọn nhanh danh tính thành viên (**"Bạn là ai?"**) ngay khi mở app, không bắt buộc đăng nhập phức tạp.
 - **Số học nguyên VND tuyệt đối (`100% Integer Math`):**
@@ -17,6 +17,9 @@
   - Mỗi khoản cần chuyển chỉ gồm **2 nút Copy nguyên bản**:
     1. **STK:** Chỉ copy đúng chuỗi số tài khoản (ví dụ: `0011004567890`), không kèm chữ hay ký tự phụ.
     2. **Số tiền:** Chỉ copy đúng số nguyên viết liền (ví dụ: `2500000`), dán thẳng vào ứng dụng ngân hàng.
+- **Xuất Báo cáo Chi tiêu PDF chuyên nghiệp (On-Demand CDN, `0 KB` Bundle Overhead):**
+  - Tích hợp tại **Cài đặt → Xuất báo cáo chi tiêu**, tự động tải `jspdf`, `jspdf-autotable` và font tiếng Việt `Roboto` qua CDN khi cần xuất file.
+  - **Trang 1 phong cách Executive Business Trip Expense Report:** Protruding travel icon tabs, banner xanh lá (`#43A04D`), dải thông tin nền kem (`#F5E8CB`), ô tổng chi tiêu & dòng tổng cộng nền xanh sage (`#B7DDA2`), biểu đồ danh mục kèm icon vector, bảng tổng hợp công nợ (`ĐÃ CHI`, `PHẦN CHỊU`, `CHÊNH LỆCH`), lệnh chuyển khoản tất toán (`→`), khối ghi chú/xác nhận quyết toán và phụ lục chi tiết từng thành viên.
 - **Đồng bộ hai chiều với Google Sheets (Offline-First & Kiểm soát xung đột `rev`):**
   - Lưu trữ tức thì trên `localStorage` kèm hàng đợi `syncQueue`, tự động gom nhóm (**Batch Upsert**) khi có mạng trở lại.
   - Cơ chế khóa đồng bộ `LockService` + kiểm tra phiên bản `baseRev` chống ghi đè dữ liệu khi nhiều thành viên nhập liệu cùng lúc.
@@ -26,6 +29,8 @@
 ## 2. Cấu trúc thư mục
 
 ```text
+├── docs/
+│   └── NEXT_PHASE_PLAN.md        # Kế hoạch phát triển giai đoạn tiếp theo (Zero-Demo Onboarding & Wizard)
 ├── src/
 │   ├── assets/
 │   │   ├── Code.gs               # Mã nguồn Google Apps Script (Backend trên Google Sheet)
@@ -34,7 +39,7 @@
 │   │   ├── OverviewTab.tsx       # Tab Tổng quan: Tổng chi, Số dư cá nhân, Theo danh mục & ngày
 │   │   ├── ExpensesTab.tsx       # Tab Khoản chi: Tìm kiếm, lọc danh mục/người trả, nhóm theo ngày
 │   │   ├── SettlementTab.tsx     # Tab Quyết toán: Danh sách cần chuyển (2 nút Copy STK & Số tiền) + Bảng cân đối
-│   │   ├── SettingsTab.tsx       # Tab Cài đặt: Thành viên/STK, Chuyến đi, Hệ thống & Mở khóa Admin PIN
+│   │   ├── SettingsTab.tsx       # Tab Cài đặt: Thành viên/STK, Chuyến đi, Xuất PDF, Hệ thống & Admin PIN
 │   │   ├── ExpenseFormModal.tsx  # Form thêm/sửa khoản chi & chuyển trả riêng (kèm gợi ý bội số 000)
 │   │   ├── ConflictModal.tsx     # Hộp thoại giải quyết xung đột phiên bản (rev) với Google Sheet
 │   │   ├── WhoAmIModal.tsx       # Chọn thành viên đang sử dụng thiết bị
@@ -44,9 +49,12 @@
 │   │   └── syncService.ts        # Hàng đợi Offline, Batch Sync, Cache & giao tiếp Google Apps Script
 │   ├── utils/
 │   │   ├── math.ts               # Thuật toán chia tiền số nguyên VND & tối giản nợ (Greedy Net Balance)
-│   │   └── format.ts             # Định dạng tiền tệ, ngày giờ GMT+7, đọc số tiền bằng chữ tiếng Việt
-│   ├── config.ts                 # Cấu hình cứng DEFAULT_GAS_URL, danh sách 5 thành viên & dữ liệu mẫu
+│   │   ├── format.ts             # Định dạng tiền tệ, ngày giờ GMT+7, đọc số tiền bằng chữ tiếng Việt
+│   │   ├── pdfReport.ts          # Trình tạo Báo cáo Chi tiêu PDF (Executive Masthead, Vector Charts, AutoTable)
+│   │   └── pdfReport.test.ts     # Unit tests kiểm thử logic chuẩn hóa dữ liệu & báo cáo PDF
+│   ├── config.ts                 # Cấu hình cứng DEFAULT_GAS_URL, danh mục chuẩn & dữ liệu khởi tạo
 │   ├── types.ts                  # Định nghĩa TypeScript interfaces
+│   ├── version.ts                # Quản lý phiên bản ứng dụng (Single Source of Truth)
 │   └── App.tsx                   # Điều phối trạng thái ứng dụng, đồng bộ tự động & thông báo
 ```
 
@@ -62,9 +70,10 @@
    ```bash
    npm run dev
    ```
-3. **Kiểm tra lỗi TypeScript & Build Production:**
+3. **Kiểm tra lỗi TypeScript, Chạy Unit Test & Build Production:**
    ```bash
    npm run lint
+   npx tsx --test src/utils/pdfReport.test.ts
    npm run build
    ```
 

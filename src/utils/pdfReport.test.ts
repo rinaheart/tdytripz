@@ -18,8 +18,8 @@ const mockConfig: TripConfig = {
   defaultSplitMode: 'equal',
   enabledSplitModes: ['equal', 'shares', 'exact'],
   suggestMultipliers: [1000, 10000, 100000],
-  maxSuggestAmount: 100000000,
-  accentColor: '#0f766e',
+  maxSuggestAmount: 50000000,
+  accentColor: '#000777',
 };
 
 const mockMembers: Member[] = [
