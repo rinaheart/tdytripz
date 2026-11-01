@@ -6,5 +6,5 @@
  * - public/sw.js (CACHE_NAME của PWA Service Worker)
  */
 export const APP_NAME = 'TdyTrip';
-export const APP_VERSION = 'v20261030-1425';
+export const APP_VERSION = 'v20261101-1000';
 

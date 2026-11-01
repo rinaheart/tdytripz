@@ -1214,28 +1214,21 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           </button>
         </div>
 
-        <div className="px-3 py-2.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1 text-[11px] text-slate-600">
-          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
-            <span>
-              Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
+        <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
+          <span>
+            Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
+          </span>
+          {reportPreview.memberSummary ? (
+            <span className="font-mono">
+              Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
+              {' · '}
+              Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
             </span>
-            {reportPreview.memberSummary ? (
-              <span className="font-mono">
-                Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
-                {' · '}
-                Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
-              </span>
-            ) : (
-              <span className="font-mono">
-                Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
-              </span>
-            )}
-          </div>
-          <p className="text-[10.5px] text-slate-500 leading-snug">
-            {reportPreview.memberSummary
-              ? `Gồm: Tổng quan thu chi cá nhân, chi phí theo hạng mục, kết quả quyết toán & các khoản ${reportPreview.memberSummary.memberName} đã chi.`
-              : `Gồm 4 phần: Tổng quan chi tiêu • Cân đối thu chi & quyết toán (${reportPreview.settlement.simplifiedDebts.length} giao dịch) • Danh sách chi tiết khoản chi • Phụ lục riêng cho ${reportPreview.memberAppendices.length} thành viên.`}
-          </p>
+          ) : (
+            <span className="font-mono">
+              Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
+            </span>
+          )}
         </div>
       </section>
     </div>

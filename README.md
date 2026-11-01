@@ -18,8 +18,11 @@
     1. **STK:** Chỉ copy đúng chuỗi số tài khoản (ví dụ: `0011004567890`), không kèm chữ hay ký tự phụ.
     2. **Số tiền:** Chỉ copy đúng số nguyên viết liền (ví dụ: `2500000`), dán thẳng vào ứng dụng ngân hàng.
 - **Xuất Báo cáo Chi tiêu PDF chuyên nghiệp (On-Demand CDN, `0 KB` Bundle Overhead):**
-  - Tích hợp tại **Cài đặt → Xuất báo cáo chi tiêu**, tự động tải `jspdf`, `jspdf-autotable` và font tiếng Việt `Roboto` qua CDN khi cần xuất file.
-  - **Trang 1 phong cách Executive Business Trip Expense Report:** Protruding travel icon tabs, banner xanh lá (`#43A04D`), dải thông tin nền kem (`#F5E8CB`), ô tổng chi tiêu & dòng tổng cộng nền xanh sage (`#B7DDA2`), biểu đồ danh mục kèm icon vector, bảng tổng hợp công nợ (`ĐÃ CHI`, `PHẦN CHỊU`, `CHÊNH LỆCH`), lệnh chuyển khoản tất toán (`→`), khối ghi chú/xác nhận quyết toán và phụ lục chi tiết từng thành viên.
+  - Tích hợp tại **Cài đặt → Xuất báo cáo chi tiêu**, tự động tải `jspdf`, `jspdf-autotable` và font tiếng Việt `Roboto` qua CDN chỉ khi người dùng bấm xuất file.
+  - **Bố cục Executive Dashboard hiện đại & tinh gọn:**
+    - **Trang 1 (Tổng quan & Quyết toán):** Hero Masthead nền Slate-Navy (`#0F172A`), 4 thẻ KPI tổng quan, 2 biểu đồ ngang song song (**Chi tiêu theo Hạng mục** & **Chi tiêu theo Ngày**) kèm icon Lucide độ phân giải 4x Retina, biểu đồ so sánh **Đã chi & Phải chịu** kèm avatar thành viên, bảng cân đối thu chi và **Danh sách chuyển khoản quyết toán** nổi bật với mũi tên vector (`→`).
+    - **Trang 2 (Danh sách chi tiết khoản chi):** Tối ưu mật độ dòng để hiển thị trọn vẹn lịch sử giao dịch theo thời gian, gộp cột phạm vi chia đều thành `xx người` và hàng tổng cộng riêng biệt.
+    - **Phụ lục cá nhân (Mỗi thành viên 1 trang):** 4 thẻ KPI cá nhân (`ĐÃ CHI`, `PHẢI CHỊU`, `GIAO DỊCH TẤT TOÁN`, `SỐ DƯ CUỐI`), thẻ kết quả quyết toán cá nhân kèm công thức tính nhanh, biểu đồ chi phí theo hạng mục và bảng các khoản thành viên đã chi. Tất cả các bảng đều tự động canh phải cột cuối cùng.
 - **Đồng bộ hai chiều với Google Sheets (Offline-First & Kiểm soát xung đột `rev`):**
   - Lưu trữ tức thì trên `localStorage` kèm hàng đợi `syncQueue`, tự động gom nhóm (**Batch Upsert**) khi có mạng trở lại.
   - Cơ chế khóa đồng bộ `LockService` + kiểm tra phiên bản `baseRev` chống ghi đè dữ liệu khi nhiều thành viên nhập liệu cùng lúc.
@@ -33,24 +36,26 @@
 │   └── NEXT_PHASE_PLAN.md        # Kế hoạch phát triển giai đoạn tiếp theo (Zero-Demo Onboarding & Wizard)
 ├── src/
 │   ├── assets/
-│   │   ├── Code.gs               # Mã nguồn Google Apps Script (Backend trên Google Sheet)
-│   │   └── gasCode.ts            # Export chuỗi raw Code.gs để copy nhanh trong tab Cài đặt
+│   │   └── gasCode.ts            # Mã nguồn Google Apps Script (export chuỗi raw để copy nhanh trong tab Cài đặt)
 │   ├── components/
 │   │   ├── OverviewTab.tsx       # Tab Tổng quan: Tổng chi, Số dư cá nhân, Theo danh mục & ngày
-│   │   ├── ExpensesTab.tsx       # Tab Khoản chi: Tìm kiếm, lọc danh mục/người trả, nhóm theo ngày
-│   │   ├── SettlementTab.tsx     # Tab Quyết toán: Danh sách cần chuyển (2 nút Copy STK & Số tiền) + Bảng cân đối
+│   │   ├── ExpensesTab.tsx       # Tab Chi tiêu: Tìm kiếm, lọc danh mục/người trả, nhóm theo ngày
+│   │   ├── SettlementTab.tsx     # Tab Chia tiền: Danh sách cần chuyển (2 nút Copy STK & Số tiền) + Bảng cân đối
 │   │   ├── SettingsTab.tsx       # Tab Cài đặt: Thành viên/STK, Chuyến đi, Xuất PDF, Hệ thống & Admin PIN
 │   │   ├── ExpenseFormModal.tsx  # Form thêm/sửa khoản chi & chuyển trả riêng (kèm gợi ý bội số 000)
 │   │   ├── ConflictModal.tsx     # Hộp thoại giải quyết xung đột phiên bản (rev) với Google Sheet
+│   │   ├── PWAInstallModal.tsx   # Hộp thoại hướng dẫn cài đặt PWA lên màn hình chính (iOS/Android)
 │   │   ├── WhoAmIModal.tsx       # Chọn thành viên đang sử dụng thiết bị
 │   │   ├── MemberAvatar.tsx      # Avatar chữ cái đầu đạt chuẩn tương phản WCAG AAA
 │   │   └── Navbar.tsx            # Thanh điều hướng cố định dưới đáy màn hình (Mobile Bottom Bar)
+│   ├── hooks/
+│   │   └── usePWAInstall.ts      # Hook quản lý trạng thái cài đặt PWA (beforeinstallprompt & iOS detection)
 │   ├── services/
 │   │   └── syncService.ts        # Hàng đợi Offline, Batch Sync, Cache & giao tiếp Google Apps Script
 │   ├── utils/
 │   │   ├── math.ts               # Thuật toán chia tiền số nguyên VND & tối giản nợ (Greedy Net Balance)
 │   │   ├── format.ts             # Định dạng tiền tệ, ngày giờ GMT+7, đọc số tiền bằng chữ tiếng Việt
-│   │   ├── pdfReport.ts          # Trình tạo Báo cáo Chi tiêu PDF (Executive Masthead, Vector Charts, AutoTable)
+│   │   ├── pdfReport.ts          # Trình tạo Báo cáo Chi tiêu PDF (Executive Dashboard, Vector Icons & AutoTable)
 │   │   └── pdfReport.test.ts     # Unit tests kiểm thử logic chuẩn hóa dữ liệu & báo cáo PDF
 │   ├── config.ts                 # Cấu hình cứng DEFAULT_GAS_URL, danh mục chuẩn & dữ liệu khởi tạo
 │   ├── types.ts                  # Định nghĩa TypeScript interfaces
@@ -94,7 +99,7 @@ Khi `DEFAULT_GAS_URL` đã được cấu hình trong `src/config.ts`:
 
 ### Bước 2: Cài đặt hoặc nâng cấp `Code.gs` trên Google Sheets
 1. Mở file Google Sheets của nhóm → chọn **Tiện ích mở rộng (Extensions)** → **Apps Script**.
-2. Trong ứng dụng web, vào tab **Cài đặt** → mục **Hệ thống** → mở khóa **PIN Admin** (mặc định: `1234`) → bấm **Copy Code.gs** (hoặc copy từ file `src/assets/Code.gs`).
+2. Trong ứng dụng web, vào tab **Cài đặt** → mục **Hệ thống** → mở khóa **PIN Admin** (mặc định: `1234`) → bấm **Copy Code.gs** (nội dung được đóng gói sẵn trong `src/assets/gasCode.ts`).
 3. Dán đè toàn bộ nội dung vào file `Code.gs` trên trình soạn thảo Apps Script và bấm **Lưu (Ctrl+S)**.
 4. Bấm **Triển khai (Deploy)** → **Quản lý các bản triển khai (Manage deployments)** → bấm biểu tượng cây bút (Chỉnh sửa) → tại mục **Phiên bản (Version)** chọn **Phiên bản mới (New version)** → bấm **Triển khai (Deploy)**.
    - *Thực thi dưới dạng (Execute as):* **Tôi (Me)**
