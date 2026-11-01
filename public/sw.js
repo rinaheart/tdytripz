@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tdytime-pwa-v20261022-1511';
+const CACHE_NAME = 'tdytime-pwa-v20261101-1000';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -55,7 +55,13 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(request)
       .then((response) => {
-        if (response && response.status === 200 && response.type === 'basic') {
+        const isCacheableType =
+          response.type === 'basic' ||
+          (response.type === 'cors' &&
+            (url.hostname === 'cdn.jsdelivr.net' ||
+              url.hostname === 'cdnjs.cloudflare.com' ||
+              url.hostname === 'fonts.gstatic.com'));
+        if (response && response.status === 200 && isCacheableType) {
           const copy = response.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
         }
