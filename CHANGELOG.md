@@ -6,13 +6,14 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20261102_0904] - 2026-11-02
+## [v20261102_1052] - 2026-11-02
 
 ### Changed
-- **Tái cấu trúc Bento Grid cho Phụ lục Cá nhân khi Xuất PDF (`src/utils/pdfReport.ts`):**
-  - Chuẩn hóa hệ lưới (`computeAppendixGridMetrics`) đồng bộ khoảng cách (`gridGap = 3.2mm`) giữa hàng 4 thẻ KPI (`ĐÃ CHI`, `PHẢI CHỊU`, `GIAO DỊCH TẤT TOÁN`, `SỐ DƯ CUỐI`) và hàng 2 cột chính chia tỷ lệ cân đối 50/50, đảm bảo rãnh phân tách ở giữa thẳng hàng tuyệt đối 100%.
-  - Thiết kế lại thẻ Quyết toán cá nhân bên trái với thanh tiêu đề đặc (`SỐ TIỀN CẦN CHUYỂN TRẢ` / `SỐ TIỀN ĐƯỢC NHẬN VỀ`), làm nổi bật con số quyết toán quan trọng nhất ở vị trí trung tâm (`22.5pt`), hộp pill hiển thị cặp chuyển khoản kèm mũi tên vector đậm (`Loan → Nhi`), dòng thông tin tài khoản nhận (`TK nhận`) và dòng công thức tính nhanh kèm icon `Calculator`.
-  - Đồng bộ chiều cao và thanh tiêu đề đặc màu xanh (`Chi phí theo Hạng mục`) cho thẻ thống kê hạng mục bên phải với badge icon tròn và thanh tiến độ bo tròn.
+- **Thiết kế lại Phụ lục Cá nhân PDF theo phong cách Minimalist Flat-Design (`src/utils/pdfReport.ts`):**
+  - **Hero Banner Hình học Tối giản (`drawAppendixHeroBannerBackground`):** Nền xanh Navy đậm kết hợp hai mảng sóng hình học phẳng ở góc phải, đồng bộ với badge avatar tròn và tiêu đề in hoa sắc nét.
+  - **Hệ thống Icon Phẳng (`renderFlatAppendixIconDataUrl`):** Vẽ trực tiếp các biểu tượng hình học phẳng (`Wallet`, `Users`, `CheckSolid` nền tím đặc, `RefreshCw`, `PieChartHeader`, `Plane`, `Utensils`, `Hotel`, `MoreDots` 3 chấm ngang cho hạng mục Khác, `Car` chính diện, `Calculator`) có độ phân giải cao.
+  - **Lưới 4 thẻ KPI (`drawAppendixFourKpiGrid`):** Bổ sung thanh màu nhấn phía trên (`Top Colored Accent Bar`), đặt badge icon tròn kích thước lớn (`8.4mm`) ở bên trái ôm trọn chiều cao của Nhãn + Chỉ số chính bên phải, và căn giữa dòng mô tả phụ ở đáy thẻ.
+  - **Khối Quyết toán Cá nhân & Chi phí Hạng mục (Grid 50/50):** Bổ sung thanh nhấn dọc bên trái (`Left Vertical Accent Bar`) cho thẻ `SỐ TIỀN CẦN CHUYỂN TRẢ` / `SỐ TIỀN ĐƯỢC NHẬN VỀ`, phóng lớn con số quyết toán trọng tâm (`25pt`), hộp pill `Loan → Nhi`, dòng `TK nhận` ngăn cách bằng ký hiệu chấm tròn rỗng (`◦`) và dòng công thức tính nhanh kèm icon máy tính ở đáy thẻ.
 
 ---
 
