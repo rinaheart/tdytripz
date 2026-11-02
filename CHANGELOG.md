@@ -6,6 +6,24 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
+## [v20261102_0904] - 2026-11-02
+
+### Changed
+- **Tái cấu trúc Bento Grid cho Phụ lục Cá nhân khi Xuất PDF (`src/utils/pdfReport.ts`):**
+  - Chuẩn hóa hệ lưới (`computeAppendixGridMetrics`) đồng bộ khoảng cách (`gridGap = 3.2mm`) giữa hàng 4 thẻ KPI (`ĐÃ CHI`, `PHẢI CHỊU`, `GIAO DỊCH TẤT TOÁN`, `SỐ DƯ CUỐI`) và hàng 2 cột chính chia tỷ lệ cân đối 50/50, đảm bảo rãnh phân tách ở giữa thẳng hàng tuyệt đối 100%.
+  - Thiết kế lại thẻ Quyết toán cá nhân bên trái với thanh tiêu đề đặc (`SỐ TIỀN CẦN CHUYỂN TRẢ` / `SỐ TIỀN ĐƯỢC NHẬN VỀ`), làm nổi bật con số quyết toán quan trọng nhất ở vị trí trung tâm (`22.5pt`), hộp pill hiển thị cặp chuyển khoản kèm mũi tên vector đậm (`Loan → Nhi`), dòng thông tin tài khoản nhận (`TK nhận`) và dòng công thức tính nhanh kèm icon `Calculator`.
+  - Đồng bộ chiều cao và thanh tiêu đề đặc màu xanh (`Chi phí theo Hạng mục`) cho thẻ thống kê hạng mục bên phải với badge icon tròn và thanh tiến độ bo tròn.
+
+---
+
+## [v20261102_0825] - 2026-11-02
+
+### Added
+- **Bản đồ Tính năng & Luồng Nghiệp vụ (`docs/FEATURE_MAP.md`):**
+  - Xây dựng tài liệu Feature Map trực quan theo chuẩn `markphelps-feature-map`, bao gồm sơ đồ kiến trúc tổng thể (Mermaid), bảng điều hướng (Navigation Sitemap) và chi tiết 8 phân hệ tính năng cốt lõi (Workflow, Selectors điều khiển, Kết quả kỳ vọng và Quy tắc bất biến/Gotchas).
+
+---
+
 ## [v20261101_2008] - 2026-11-01
 
 ### Added

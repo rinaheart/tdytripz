@@ -30,13 +30,16 @@
 
 ```text
 /
+├── docs/
+│   ├── FEATURE_MAP.md             # Bản đồ tính năng, sơ đồ luồng & hướng dẫn kiểm thử (Feature Map)
+│   └── NEXT_PHASE_PLAN.md         # Kế hoạch phát triển mở rộng
 ├── public/
-│   ├── sw.js                  # Service Worker (Tiered Precache + Stale-While-Revalidate)
-│   ├── manifest.json          # Cấu hình cài đặt PWA
-│   └── version.json           # Tự động đồng bộ từ src/version.ts khi build
+│   ├── sw.js                      # Service Worker (Tiered Precache + Stale-While-Revalidate)
+│   ├── manifest.json              # Cấu hình cài đặt PWA
+│   └── version.json               # Tự động đồng bộ từ src/version.ts khi build
 ├── src/
 │   ├── assets/
-│   │   └── gasCode.ts         # Mã nguồn Google Apps Script (Code.gs) nhúng sẵn trong ứng dụng
+│   │   └── gasCode.ts             # Mã nguồn Google Apps Script (Code.gs) nhúng sẵn trong ứng dụng
 │   ├── components/
 │   │   ├── OverviewTab.tsx        # Tab Tổng quan (Bento Grid, thống kê chi tiêu)
 │   │   ├── ExpensesTab.tsx        # Tab Chi tiết khoản chi (Lazy-loaded, Progressive Rendering)
@@ -63,6 +66,8 @@
 └── vite.config.ts                 # Cấu hình Vite + Plugin tự động đồng bộ version & Precache SW
 ```
 
+> 📖 **Tài liệu Chi tiết Tính năng & Luồng Nghiệp vụ:** Xem toàn bộ sơ đồ luồng, điểm truy cập giao diện (selectors/routes) và quy tắc bất biến tại **[`docs/FEATURE_MAP.md`](docs/FEATURE_MAP.md)**.
+
 ---
 
 ## 3. Cài đặt & Phát triển (Local Development)
@@ -87,7 +92,7 @@ npm run build
 ```
 
 > **Quy tắc định dạng Version hệ thống:**
-> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyymmdd_HHmm]`** theo múi giờ **GMT+7** (ví dụ: `v20261101_2008`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
+> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyymmdd_HHmm]`** theo múi giờ **GMT+7** (ví dụ: `v20261102_0825`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
 
 ---
 

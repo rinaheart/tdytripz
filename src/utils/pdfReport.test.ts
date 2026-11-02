@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildExpenseReportData,
+  computeAppendixGridMetrics,
   formatSpentAtReportVN,
   sanitizeFileNameSegment,
   shortenCategoryLabelForTable,
@@ -238,4 +239,23 @@ test('formatSpentAtReportVN, sanitizeFileNameSegment & shortenCategoryLabelForTa
   assert.equal(shortenCategoryLabelForTable('Lưu trú (KS/homestay)'), 'Lưu trú');
   assert.equal(shortenCategoryLabelForTable('Di chuyển tại chỗ'), 'Di chuyển');
 });
+
+test('computeAppendixGridMetrics - căn chỉnh thẳng hàng tuyệt đối giữa lưới 4 ô KPI và 2 cột chính (50/50)', () => {
+  const m = computeAppendixGridMetrics(210, 14, 5, 1);
+
+  assert.equal(m.fullWidth, 182);
+  // Cạnh trái KPI #1 trùng cạnh trái Cột trái
+  assert.equal(m.kpiCardX[0], m.leftColX);
+  // Cạnh phải KPI #2 trùng tuyệt đối với cạnh phải Cột trái
+  const kpi2RightEdge = m.kpiCardX[1] + m.kpiColWidth;
+  const leftColRightEdge = m.leftColX + m.mainColWidth;
+  assert.ok(Math.abs(kpi2RightEdge - leftColRightEdge) < 1e-9);
+  // Cạnh trái KPI #3 trùng tuyệt đối với cạnh trái Cột phải
+  assert.ok(Math.abs(m.kpiCardX[2] - m.rightColX) < 1e-9);
+  // Cạnh phải KPI #4 trùng tuyệt đối với cạnh phải Cột phải
+  const kpi4RightEdge = m.kpiCardX[3] + m.kpiColWidth;
+  const rightColRightEdge = m.rightColX + m.mainColWidth;
+  assert.ok(Math.abs(kpi4RightEdge - rightColRightEdge) < 1e-9);
+});
+
 

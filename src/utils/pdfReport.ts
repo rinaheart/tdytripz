@@ -222,6 +222,22 @@ const LUCIDE_ICON_PATHS: Record<string, string[]> = {
     'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z',
     'M9 10a3 3 0 1 0 6 0 3 3 0 1 0-6 0',
   ],
+  RefreshCw: [
+    'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8',
+    'M21 3v5h-5',
+    'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16',
+    'M8 16H3v5',
+  ],
+  Calculator: [
+    'M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z',
+    'M8 6h8v4H8V6z',
+    'M8 14h.01',
+    'M12 14h.01',
+    'M16 14h.01',
+    'M8 18h.01',
+    'M12 18h.01',
+    'M16 18h.01',
+  ],
 };
 
 const iconDataUrlCache = new Map<string, string>();
@@ -947,6 +963,340 @@ function headerHSpacer(h: number): number {
   return h;
 }
 
+export interface AppendixGridMetrics {
+  fullWidth: number;
+  gridGap: number;
+  kpiColWidth: number;
+  kpiCardHeight: number;
+  kpiCardX: [number, number, number, number];
+  mainColWidth: number;
+  leftColX: number;
+  rightColX: number;
+  headerHeight: number;
+  blockHeight: number;
+}
+
+/**
+ * Tính toán hệ lưới Bento Grid cho Phụ lục cá nhân đảm bảo:
+ * - 4 thẻ KPI hàng trên và 2 khối chính hàng dưới dùng chung `gridGap`.
+ * - Cạnh phải của KPI #2 thẳng hàng tuyệt đối 100% với cạnh phải của Cột trái (`leftColX + mainColWidth`).
+ * - Cạnh trái của KPI #3 thẳng hàng tuyệt đối 100% với cạnh trái của Cột phải (`rightColX`).
+ */
+export function computeAppendixGridMetrics(
+  pageWidth: number,
+  marginX: number,
+  categoryCount: number,
+  actionCount: number
+): AppendixGridMetrics {
+  const fullWidth = pageWidth - marginX * 2;
+  const gridGap = 3.2;
+  const kpiColWidth = (fullWidth - gridGap * 3) / 4;
+  const kpiCardHeight = 20.5;
+  const kpiCardX: [number, number, number, number] = [
+    marginX,
+    marginX + kpiColWidth + gridGap,
+    marginX + (kpiColWidth + gridGap) * 2,
+    marginX + (kpiColWidth + gridGap) * 3,
+  ];
+
+  const mainColWidth = (fullWidth - gridGap) / 2;
+  const leftColX = marginX;
+  const rightColX = marginX + mainColWidth + gridGap;
+  const headerHeight = 9.4;
+
+  const visibleCats = Math.min(6, Math.max(0, categoryCount));
+  const rightNeededH = visibleCats > 0 ? headerHeight + visibleCats * 7.8 + 3.2 : 48;
+  const leftNeededH =
+    actionCount > 1 ? headerHeight + 21 + actionCount * 6.2 + 9 : 50;
+  const blockHeight = Math.max(50, rightNeededH, leftNeededH);
+
+  return {
+    fullWidth,
+    gridGap,
+    kpiColWidth,
+    kpiCardHeight,
+    kpiCardX,
+    mainColWidth,
+    leftColX,
+    rightColX,
+    headerHeight,
+    blockHeight,
+  };
+}
+
+function drawCircularIconBadge(
+  doc: any,
+  iconName: string,
+  centerX: number,
+  centerY: number,
+  radiusMm: number,
+  strokeRgb: [number, number, number],
+  bgRgb: [number, number, number]
+): void {
+  doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
+  doc.circle(centerX, centerY, radiusMm, 'F');
+  const iconSize = radiusMm * 1.18;
+  drawIconBadge(
+    doc,
+    iconName,
+    centerX - iconSize / 2,
+    centerY - iconSize / 2,
+    iconSize,
+    strokeRgb
+  );
+}
+
+function drawCardSolidHeader(
+  doc: any,
+  x: number,
+  y: number,
+  width: number,
+  headerHeight: number,
+  blockHeight: number,
+  radius: number,
+  bodyFillRgb: [number, number, number],
+  headerFillRgb: [number, number, number],
+  borderRgb: [number, number, number]
+): void {
+  // 1. Nền thân thẻ bo góc
+  doc.setFillColor(bodyFillRgb[0], bodyFillRgb[1], bodyFillRgb[2]);
+  doc.roundedRect(x, y, width, blockHeight, radius, radius, 'F');
+
+  // 2. Thanh tiêu đề đặc (Solid Header Bar) bo góc trên, phẳng cạnh dưới
+  doc.setFillColor(headerFillRgb[0], headerFillRgb[1], headerFillRgb[2]);
+  doc.roundedRect(x, y, width, headerHeight, radius, radius, 'F');
+  doc.rect(x, y + headerHeight - radius, width, radius, 'F');
+
+  // 3. Viền ngoài sắc nét bao quanh toàn thẻ
+  doc.setDrawColor(borderRgb[0], borderRgb[1], borderRgb[2]);
+  doc.setLineWidth(0.32);
+  doc.roundedRect(x, y, width, blockHeight, radius, radius, 'D');
+}
+
+function drawCenteredTransferPairWithArrow(
+  doc: any,
+  activeFont: string,
+  fontSize: number,
+  leftText: string,
+  rightText: string,
+  centerX: number,
+  baselineY: number,
+  textRgb: [number, number, number],
+  arrowRgb: [number, number, number]
+): void {
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(fontSize);
+  const leftW = doc.getTextWidth(leftText);
+  const rightW = doc.getTextWidth(rightText);
+  const gap = 3.2;
+  const arrowLen = 5.4;
+  const totalW = leftW + gap + arrowLen + gap + rightW;
+  const startX = centerX - totalW / 2;
+
+  doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
+  doc.text(leftText, startX, baselineY);
+
+  const arrowStartX = startX + leftW + gap;
+  const arrowCenterY = baselineY - fontSize * 0.115;
+  const headLen = 1.65;
+  const headHalfH = 1.05;
+  const endX = arrowStartX + arrowLen;
+  const shaftEndX = endX - headLen * 0.6;
+
+  doc.setDrawColor(arrowRgb[0], arrowRgb[1], arrowRgb[2]);
+  doc.setFillColor(arrowRgb[0], arrowRgb[1], arrowRgb[2]);
+  doc.setLineWidth(0.65);
+  doc.line(arrowStartX, arrowCenterY, shaftEndX, arrowCenterY);
+  doc.triangle(
+    endX,
+    arrowCenterY,
+    endX - headLen,
+    arrowCenterY - headHalfH,
+    endX - headLen,
+    arrowCenterY + headHalfH,
+    'F'
+  );
+
+  const rightX = arrowStartX + arrowLen + gap;
+  doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
+  doc.text(rightText, rightX, baselineY);
+}
+
+function drawAppendixFourKpiGrid(
+  doc: any,
+  activeFont: string,
+  items: Array<{
+    label: string;
+    value: string;
+    subtext: string;
+    iconName: string;
+    accentColor: [number, number, number];
+    surfaceColor: [number, number, number];
+    borderColor: [number, number, number];
+    iconBgColor: [number, number, number];
+    valueColor: [number, number, number];
+  }>,
+  metrics: AppendixGridMetrics,
+  cursorY: number
+): number {
+  const y = ensurePageSpace(doc, cursorY, metrics.kpiCardHeight + 3);
+  const colW = metrics.kpiColWidth;
+  const boxH = metrics.kpiCardHeight;
+
+  items.slice(0, 4).forEach((item, idx) => {
+    const x = metrics.kpiCardX[idx];
+    const centerX = x + colW / 2;
+
+    doc.setFillColor(item.surfaceColor[0], item.surfaceColor[1], item.surfaceColor[2]);
+    doc.setDrawColor(item.borderColor[0], item.borderColor[1], item.borderColor[2]);
+    doc.setLineWidth(0.3);
+    doc.roundedRect(x, y, colW, boxH, 2.2, 2.2, 'FD');
+
+    // Hàng trên: Badge icon tròn bên trái + Nhãn in hoa đậm
+    drawCircularIconBadge(
+      doc,
+      item.iconName,
+      x + 5.6,
+      y + 5.2,
+      3.1,
+      item.accentColor,
+      item.iconBgColor
+    );
+
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.1);
+    doc.setTextColor(30, 41, 59);
+    doc.text(item.label.toUpperCase(), x + 10.1, y + 6.0);
+
+    // Hàng giữa: Chỉ số chính nổi bật canh giữa thẻ
+    doc.setFont(activeFont, 'bold');
+    let valFontSize = 11.6;
+    doc.setFontSize(valFontSize);
+    while (doc.getTextWidth(item.value) > colW - 4.5 && valFontSize > 8.6) {
+      valFontSize -= 0.4;
+      doc.setFontSize(valFontSize);
+    }
+    doc.setTextColor(item.valueColor[0], item.valueColor[1], item.valueColor[2]);
+    doc.text(item.value, centerX, y + 13.2, { align: 'center' });
+
+    // Hàng dưới: Subtext mô tả canh giữa thẻ
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(6.9);
+    doc.setTextColor(51, 65, 85);
+    const cleanSub =
+      item.subtext.length > 31 ? `${item.subtext.slice(0, 30)}…` : item.subtext;
+    doc.text(cleanSub, centerX, y + 17.7, { align: 'center' });
+  });
+
+  return y + boxH + metrics.gridGap;
+}
+
+function drawAppendixCategoryCard(
+  doc: any,
+  activeFont: string,
+  memberName: string,
+  categories: ReportCategoryBreakdown[],
+  x: number,
+  y: number,
+  width: number,
+  headerHeight: number,
+  blockHeight: number
+): void {
+  const headerBlue: [number, number, number] = [16, 86, 214];
+  const borderSlate: [number, number, number] = [203, 213, 225];
+
+  drawCardSolidHeader(
+    doc,
+    x,
+    y,
+    width,
+    headerHeight,
+    blockHeight,
+    2.2,
+    [255, 255, 255],
+    headerBlue,
+    borderSlate
+  );
+
+  drawIconBadge(doc, 'PieChart', x + 4.2, y + 2.2, 5.0, [255, 255, 255]);
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(9.2);
+  doc.setTextColor(255, 255, 255);
+  doc.text(`Chi phí theo Hạng mục (${memberName})`, x + 10.8, y + 6.3);
+
+  const visibleCats = categories.slice(0, 6);
+  if (visibleCats.length === 0) {
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(8.2);
+    doc.setTextColor(...COLOR_SLATE);
+    doc.text(
+      `${memberName} chưa phát sinh chi phí theo hạng mục.`,
+      x + width / 2,
+      y + headerHeight + (blockHeight - headerHeight) / 2,
+      { align: 'center' }
+    );
+    return;
+  }
+
+  const bodyTopY = y + headerHeight + 2.2;
+  const availableBodyH = blockHeight - headerHeight - 3.6;
+  const stepY = Math.min(8.2, availableBodyH / visibleCats.length);
+  const badgeRadius = 2.65;
+  const badgeCenterX = x + 3.8 + badgeRadius;
+  const textStartX = x + 3.8 + badgeRadius * 2 + 2.2;
+  const trackW = width - (textStartX - x) - 4.0;
+
+  visibleCats.forEach((cat, idx) => {
+    const rowY = bodyTopY + idx * stepY;
+    const theme = CATEGORY_THEME_MAP[cat.categoryIcon] || CATEGORY_THEME_MAP.Package;
+    const label = shortenCategoryLabelForTable(cat.categoryName);
+
+    drawCircularIconBadge(
+      doc,
+      cat.categoryIcon || 'Package',
+      badgeCenterX,
+      rowY + 3.2,
+      badgeRadius,
+      theme.stroke,
+      theme.bg
+    );
+
+    // Dòng 1: Tên hạng mục đậm + số khoản chi bên trái; Số tiền + % màu sắc bên phải
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.6);
+    doc.setTextColor(...COLOR_INK);
+    doc.text(label, textStartX, rowY + 2.8);
+    const labelW = doc.getTextWidth(label);
+
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(7.4);
+    doc.setTextColor(...COLOR_SLATE);
+    doc.text(`  •  ${cat.count} khoản`, textStartX + labelW, rowY + 2.8);
+
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(7.6);
+    doc.setTextColor(theme.stroke[0], theme.stroke[1], theme.stroke[2]);
+    doc.text(
+      `${formatVND(cat.amount, false)} đ (${cat.percentage}%)`,
+      x + width - 4.0,
+      rowY + 2.8,
+      { align: 'right' }
+    );
+
+    // Dòng 2: Thanh progress bar bo tròn cân đối
+    const barY = rowY + 4.1;
+    doc.setFillColor(235, 240, 246);
+    doc.roundedRect(textStartX, barY, trackW, 2.05, 1.0, 1.0, 'F');
+
+    const ratio = Math.max(0, Math.min(1, cat.percentage / 100));
+    const fillW = Math.max(ratio > 0 ? 2.2 : 0, trackW * ratio);
+    if (fillW > 0) {
+      doc.setFillColor(theme.bar[0], theme.bar[1], theme.bar[2]);
+      doc.roundedRect(textStartX, barY, fillW, 2.05, 1.0, 1.0, 'F');
+    }
+  });
+}
+
 function renderMemberAppendixSection(
   doc: any,
   autoTableFn: any,
@@ -959,80 +1309,89 @@ function renderMemberAppendixSection(
   pageWidth: number
 ): number {
   let cursorY = startCursorY;
-  const fullWidth = pageWidth - marginX * 2;
+  const actions = appendix.finalSettlementActions;
+  const metrics = computeAppendixGridMetrics(
+    pageWidth,
+    marginX,
+    appendix.byCategory.length,
+    actions.length
+  );
+  const { fullWidth, gridGap, mainColWidth, leftColX, rightColX, headerHeight, blockHeight } =
+    metrics;
 
-  // Hero Header cho trang Phụ lục cá nhân
-  const bannerH = 18.5;
+  // ==========================================================================
+  // 1. HERO HEADER CHO TRANG PHỤ LỤC CÁ NHÂN
+  // ==========================================================================
+  const bannerH = 18.8;
   doc.setFillColor(...COLOR_HERO_DARK);
-  doc.roundedRect(marginX, cursorY, fullWidth, bannerH, 2.2, 2.2, 'F');
+  doc.roundedRect(marginX, cursorY, fullWidth, bannerH, 2.5, 2.5, 'F');
 
-  const avatarRgb = hexToRgb(appendix.avatarColor, [13, 148, 136]);
+  const avatarRgb = hexToRgb(appendix.avatarColor, [219, 39, 119]);
   doc.setFillColor(avatarRgb[0], avatarRgb[1], avatarRgb[2]);
-  doc.roundedRect(marginX, cursorY, fullWidth, 1.4, 0.8, 0.8, 'F');
-
-  doc.setFillColor(avatarRgb[0], avatarRgb[1], avatarRgb[2]);
-  doc.circle(marginX + 8.5, cursorY + 10, 4.6, 'F');
+  doc.circle(marginX + 9.2, cursorY + bannerH / 2, 5.1, 'F');
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(10.8);
+  doc.setFontSize(11.8);
   doc.setTextColor(255, 255, 255);
   doc.text(
     (appendix.memberName || '?').trim().charAt(0).toUpperCase(),
-    marginX + 8.5,
-    cursorY + 11.3,
+    marginX + 9.2,
+    cursorY + bannerH / 2 + 1.4,
     { align: 'center' }
   );
 
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(7.1);
+  doc.setFontSize(7.4);
   doc.setTextColor(...COLOR_EMERALD_BRIGHT);
-  doc.text(`${badgeLabel}  •  ${report.tripName.toUpperCase()}`, marginX + 16, cursorY + 6.3);
+  doc.text(`${badgeLabel}  •  ${report.tripName.toUpperCase()}`, marginX + 17.5, cursorY + 6.8);
 
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(13.2);
+  doc.setFontSize(13.6);
   doc.setTextColor(255, 255, 255);
   doc.text(
     `QUYẾT TOÁN CÁ NHÂN: ${appendix.memberName.toUpperCase()}`,
-    marginX + 16,
-    cursorY + 13.5
+    marginX + 17.5,
+    cursorY + 14.2
   );
 
   if (appendix.bankInfo) {
     doc.setFillColor(...COLOR_HERO_CARD);
     doc.setDrawColor(51, 65, 85);
-    doc.setLineWidth(0.2);
-    const bankText = `TK nhận: ${appendix.bankInfo}`;
+    doc.setLineWidth(0.22);
+    const bankText = `TK cá nhân: ${appendix.bankInfo}`;
     doc.setFont(activeFont, 'bold');
-    doc.setFontSize(7.4);
+    doc.setFontSize(7.3);
     const bw = Math.min(78, doc.getTextWidth(bankText) + 6);
-    doc.roundedRect(pageWidth - marginX - bw - 3, cursorY + 5.2, bw, 8, 1.5, 1.5, 'FD');
+    doc.roundedRect(pageWidth - marginX - bw - 3.2, cursorY + 5.4, bw, 8, 1.5, 1.5, 'FD');
     doc.setTextColor(226, 232, 240);
-    doc.text(bankText, pageWidth - marginX - 6, cursorY + 10.2, { align: 'right' });
+    doc.text(bankText, pageWidth - marginX - 6.2, cursorY + 10.3, { align: 'right' });
   }
 
-  cursorY += bannerH + 3.5;
+  cursorY += bannerH + gridGap;
 
-  // 4 ô KPI cá nhân
+  // ==========================================================================
+  // 2. HÀNG GRID 4 Ô KPI CÁ NHÂN (CÂN ĐỐI & THẲNG HÀNG VỚI 2 CỘT BÊN DƯỚI)
+  // ==========================================================================
   const isPositive = appendix.balance > 0;
   const isNegative = appendix.balance < 0;
   const balanceAccent: [number, number, number] = isPositive
-    ? COLOR_TEAL_DARK
+    ? [13, 122, 95]
     : isNegative
-      ? COLOR_ROSE_DARK
+      ? [190, 18, 48]
       : COLOR_SLATE;
   const balanceSurface: [number, number, number] = isPositive
-    ? [240, 253, 250]
+    ? [228, 250, 244]
     : isNegative
-      ? [255, 241, 242]
+      ? [254, 228, 232]
       : [248, 250, 252];
   const balanceBorder: [number, number, number] = isPositive
     ? [153, 246, 228]
     : isNegative
-      ? [254, 205, 211]
+      ? [248, 180, 192]
       : [226, 232, 240];
   const balanceIconBg: [number, number, number] = isPositive
-    ? [204, 251, 241]
+    ? [196, 245, 232]
     : isNegative
-      ? [255, 228, 230]
+      ? [252, 205, 213]
       : [226, 232, 240];
 
   const balanceStatusText = isPositive
@@ -1049,68 +1408,68 @@ function renderMemberAppendixSection(
       ? Math.round((appendix.paidExpense / report.overview.totalExpenseAmount) * 1000) / 10
       : 0;
 
-  cursorY = drawFourKpiRow(
+  cursorY = drawAppendixFourKpiGrid(
     doc,
     activeFont,
     [
       {
-        label: 'Đã chi',
+        label: 'ĐÃ CHI',
         value: `${formatVND(appendix.paidExpense, false)} đ`,
         subtext: `${appendix.paidRows.filter((r) => r.recordType === 'expense').length} khoản (${shareRatioPct}% tổng chi)`,
         iconName: 'Wallet',
-        accentColor: COLOR_TEAL,
-        surfaceColor: [240, 253, 250],
+        accentColor: [13, 122, 95],
+        surfaceColor: [228, 250, 244],
         borderColor: [153, 246, 228],
-        iconBgColor: [204, 251, 241],
-        valueColor: COLOR_TEAL_DARK,
+        iconBgColor: [196, 245, 232],
+        valueColor: [13, 122, 95],
       },
       {
-        label: 'Phải chịu',
+        label: 'PHẢI CHỊU',
         value: `${formatVND(appendix.owedExpense, false)} đ`,
         subtext: `Tham gia ${appendix.participatedRows.filter((r) => r.recordType === 'expense').length} khoản chi`,
         iconName: 'Users',
-        accentColor: [37, 99, 235],
-        surfaceColor: [239, 246, 255],
-        borderColor: [191, 219, 254],
-        iconBgColor: [219, 234, 254],
-        valueColor: COLOR_INK,
+        accentColor: [29, 78, 216],
+        surfaceColor: [232, 244, 255],
+        borderColor: [186, 218, 255],
+        iconBgColor: [209, 232, 255],
+        valueColor: [15, 35, 75],
       },
       hasMemberTransfers
         ? {
-            label: 'Đã chuyển / nhận',
+            label: 'ĐÃ CHUYỂN / NHẬN',
             value: `${formatVND(appendix.netTransfer, false)} đ`,
             subtext: `Chuyển ${formatVND(appendix.sentTransfer, false)} / Nhận ${formatVND(appendix.receivedTransfer, false)}`,
             iconName: 'ArrowRightLeft',
-            accentColor: [124, 58, 237],
-            surfaceColor: [245, 243, 255],
-            borderColor: [221, 214, 254],
-            iconBgColor: [237, 233, 254],
-            valueColor: COLOR_INK,
+            accentColor: [109, 40, 217],
+            surfaceColor: [243, 235, 255],
+            borderColor: [216, 196, 254],
+            iconBgColor: [228, 212, 255],
+            valueColor: [30, 27, 75],
           }
         : {
-            label: 'Giao dịch tất toán',
+            label: 'GIAO DỊCH TẤT TOÁN',
             value:
-              appendix.finalSettlementActions.length > 0
-                ? `${appendix.finalSettlementActions.length} giao dịch`
+              actions.length > 0
+                ? `${actions.length} giao dịch`
                 : 'Không cần chuyển',
             subtext:
-              appendix.finalSettlementActions.length > 0
+              actions.length > 0
                 ? isNegative
                   ? 'Chuyển khoản tất toán'
                   : 'Nhận tiền tất toán'
                 : 'Đã cân bằng',
-            iconName: 'Send',
-            accentColor: [124, 58, 237],
-            surfaceColor: [245, 243, 255],
-            borderColor: [221, 214, 254],
-            iconBgColor: [237, 233, 254],
-            valueColor: COLOR_INK,
+            iconName: 'CheckCircle',
+            accentColor: [109, 40, 217],
+            surfaceColor: [243, 235, 255],
+            borderColor: [216, 196, 254],
+            iconBgColor: [228, 212, 255],
+            valueColor: [30, 27, 75],
           },
       {
-        label: 'Số dư cuối',
+        label: 'SỐ DƯ CUỐI',
         value: `${balPrefix}${formatVND(appendix.balance, false)} đ`,
         subtext: balanceStatusText,
-        iconName: 'CheckCircle',
+        iconName: 'RefreshCw',
         accentColor: balanceAccent,
         surfaceColor: balanceSurface,
         borderColor: balanceBorder,
@@ -1118,247 +1477,242 @@ function renderMemberAppendixSection(
         valueColor: balanceAccent,
       },
     ],
-    marginX,
-    cursorY,
-    pageWidth
+    metrics,
+    cursorY
   );
 
-  // Bố cục 2 cột song song:
-  // - Cột trái: Khung KẾT QUẢ QUYẾT TOÁN CÁ NHÂN
-  // - Cột phải: Biểu đồ Chi phí theo Hạng mục
-  const gap = 4;
-  const leftColW = fullWidth * 0.48;
-  const rightColW = fullWidth - leftColW - gap;
+  // ==========================================================================
+  // 3. GRID 2 CỘT CÂN ĐỐI 50/50:
+  //    - Cột trái: Nổi bật chỉ số quan trọng nhất (SỐ TIỀN CẦN CHUYỂN TRẢ / NHẬN VỀ)
+  //    - Cột phải: Chi phí theo Hạng mục (cùng chiều rộng & chiều cao)
+  // ==========================================================================
+  cursorY = ensurePageSpace(doc, cursorY, blockHeight + 4);
 
-  const actions = appendix.finalSettlementActions;
-  const catCount = Math.min(6, appendix.byCategory.length);
-  const rightChartH = catCount > 0 ? 8 + catCount * 7.5 + 2.2 : 24;
-  const leftMinH = Math.max(26, 12 + Math.max(1, actions.length) * 8 + 8);
-  const blockH = Math.max(rightChartH, leftMinH);
+  const leftHeaderFill: [number, number, number] = isNegative
+    ? [198, 26, 60]
+    : isPositive
+      ? [13, 148, 136]
+      : [51, 65, 85];
+  const leftBodyFill: [number, number, number] = isNegative
+    ? [253, 245, 246]
+    : isPositive
+      ? [242, 252, 249]
+      : [248, 250, 252];
+  const leftBorderColor: [number, number, number] = isNegative
+    ? [240, 168, 180]
+    : isPositive
+      ? [153, 246, 228]
+      : [203, 213, 225];
+  const leftHeaderTitle = isNegative
+    ? 'SỐ TIỀN CẦN CHUYỂN TRẢ'
+    : isPositive
+      ? 'SỐ TIỀN ĐƯỢC NHẬN VỀ'
+      : 'KẾT QUẢ QUYẾT TOÁN CÁ NHÂN';
 
-  cursorY = ensurePageSpace(doc, cursorY, blockH + 4);
-
-  // Vẽ Cột trái: Khung Kết quả Quyết toán cá nhân nổi bật
-  doc.setFillColor(255, 255, 255);
-  doc.setDrawColor(isNegative ? 254 : 153, isNegative ? 205 : 246, isNegative ? 211 : 228);
-  doc.setLineWidth(0.3);
-  doc.roundedRect(marginX, cursorY, leftColW, blockH, 1.8, 1.8, 'FD');
-
-  doc.setFillColor(isNegative ? 255 : 240, isNegative ? 241 : 253, isNegative ? 242 : 250);
-  doc.roundedRect(marginX + 0.2, cursorY + 0.2, leftColW - 0.4, 7.8, 1.6, 1.6, 'F');
-
-  const leftBarColor = isNegative ? COLOR_ROSE : isPositive ? COLOR_TEAL_DARK : COLOR_SLATE;
-  doc.setFillColor(...leftBarColor);
-  doc.roundedRect(marginX, cursorY, 2.2, blockH, 1, 1, 'F');
-
-  drawIconBadge(
+  drawCardSolidHeader(
     doc,
-    'Send',
-    marginX + 4.2,
-    cursorY + 1.7,
-    4.5,
-    leftBarColor,
-    isNegative ? [255, 228, 230] : [204, 251, 241]
+    leftColX,
+    cursorY,
+    mainColWidth,
+    headerHeight,
+    blockHeight,
+    2.2,
+    leftBodyFill,
+    leftHeaderFill,
+    leftBorderColor
   );
 
+  drawIconBadge(doc, 'Send', leftColX + 4.2, cursorY + 2.2, 5.0, [255, 255, 255]);
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(8.1);
-  doc.setTextColor(...COLOR_INK);
-  doc.text('KẾT QUẢ QUYẾT TOÁN CÁ NHÂN', marginX + 9.8, cursorY + 5.1);
+  doc.setFontSize(9.2);
+  doc.setTextColor(255, 255, 255);
+  doc.text(leftHeaderTitle, leftColX + 10.8, cursorY + 6.3);
 
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.2);
-  doc.line(marginX + 4, cursorY + 8, marginX + leftColW - 3.5, cursorY + 8);
+  const leftCenterX = leftColX + mainColWidth / 2;
+  const heroPrimaryAmount = `${isPositive ? '+' : ''}${formatVND(Math.abs(appendix.balance), false)} đ`;
+  const heroPrimaryColor: [number, number, number] = isNegative
+    ? [190, 18, 48]
+    : isPositive
+      ? [13, 122, 95]
+      : COLOR_SLATE;
 
-  if (actions.length === 0) {
-    doc.setFont(activeFont, 'normal');
-    doc.setFontSize(7.8);
-    doc.setTextColor(...COLOR_SLATE);
-    doc.text(
-      `${appendix.memberName} đã cân bằng thu chi, không cần chuyển khoản.`,
-      marginX + 5,
-      cursorY + 14.5
-    );
-  } else if (actions.length === 1) {
-    // Khi chỉ có 1 giao dịch quyết toán: Vẽ thẻ Callout nổi bật để làm tâm điểm trực quan
-    const act = actions[0];
-    const isSender = act.fromMemberId === appendix.memberId;
-    const subCardX = marginX + 4.5;
-    const subCardY = cursorY + 10.5;
-    const subCardW = leftColW - 8;
-    const subCardH = act.toBankInfo && isSender ? 18.5 : 13.5;
+  if (actions.length <= 1) {
+    // 1. CHỈ SỐ QUAN TRỌNG NHẤT: Số tiền quyết toán kích thước lớn nổi bật ở tâm điểm
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(22.5);
+    doc.setTextColor(heroPrimaryColor[0], heroPrimaryColor[1], heroPrimaryColor[2]);
+    doc.text(heroPrimaryAmount, leftCenterX, cursorY + headerHeight + 11.4, {
+      align: 'center',
+    });
 
-    doc.setFillColor(isSender ? 255 : 240, isSender ? 241 : 253, isSender ? 242 : 250);
-    doc.setDrawColor(isSender ? 254 : 153, isSender ? 205 : 246, isSender ? 211 : 228);
-    doc.setLineWidth(0.25);
-    doc.roundedRect(subCardX, subCardY, subCardW, subCardH, 1.5, 1.5, 'FD');
+    // 2. Hộp Pill hiển thị cặp chuyển khoản (VD: Loan → Nhi)
+    const pillX = leftColX + 4.2;
+    const pillY = cursorY + headerHeight + 14.6;
+    const pillW = mainColWidth - 8.4;
+    const pillH = 9.8;
+    const pillFill: [number, number, number] = isNegative
+      ? [251, 224, 228]
+      : isPositive
+        ? [209, 250, 229]
+        : [226, 232, 240];
 
-    if (isSender) {
+    doc.setFillColor(pillFill[0], pillFill[1], pillFill[2]);
+    doc.roundedRect(pillX, pillY, pillW, pillH, 2.0, 2.0, 'F');
+
+    if (actions.length === 1) {
+      const act = actions[0];
+      drawCenteredTransferPairWithArrow(
+        doc,
+        activeFont,
+        13.2,
+        act.fromMemberName,
+        act.toMemberName,
+        leftCenterX,
+        pillY + 6.6,
+        COLOR_INK,
+        isNegative ? [198, 26, 60] : [13, 148, 136]
+      );
+
+      // 3. Hàng thông tin Tài khoản nhận đặt giữa 2 đường kẻ mảnh cân đối
+      const divTopY = pillY + pillH + 2.5;
+      doc.setDrawColor(226, 214, 220);
+      doc.setLineWidth(0.2);
+      doc.line(leftColX + 4.2, divTopY, leftColX + mainColWidth - 4.2, divTopY);
+
+      const rawBank = act.toBankInfo || appendix.bankInfo || 'Chưa cập nhật STK';
+      const formattedBank = rawBank.replace(/\s*-\s*/g, '  •  ');
+      doc.setFont(activeFont, 'bold');
+      doc.setFontSize(8.8);
+      doc.setTextColor(...COLOR_INK);
+      doc.text(`TK nhận: ${formattedBank}`, leftCenterX, divTopY + 5.0, {
+        align: 'center',
+      });
+    } else {
+      doc.setFont(activeFont, 'bold');
+      doc.setFontSize(8.6);
+      doc.setTextColor(...COLOR_SLATE);
+      doc.text(
+        `${appendix.memberName} đã cân bằng thu chi • Không cần chuyển khoản`,
+        leftCenterX,
+        pillY + 6.1,
+        { align: 'center' }
+      );
+
+      const divTopY = pillY + pillH + 2.5;
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.2);
+      doc.line(leftColX + 4.2, divTopY, leftColX + mainColWidth - 4.2, divTopY);
+
+      doc.setFont(activeFont, 'bold');
+      doc.setFontSize(8.4);
+      doc.setTextColor(...COLOR_SLATE);
+      doc.text(
+        `TK nhận: ${(appendix.bankInfo || 'Chưa cập nhật STK').replace(/\s*-\s*/g, '  •  ')}`,
+        leftCenterX,
+        divTopY + 5.0,
+        { align: 'center' }
+      );
+    }
+  } else {
+    // Trường hợp thành viên có >= 2 giao dịch tất toán: vẫn làm nổi bật tổng số tiền ở trên cùng
+    doc.setFont(activeFont, 'bold');
+    doc.setFontSize(18.5);
+    doc.setTextColor(heroPrimaryColor[0], heroPrimaryColor[1], heroPrimaryColor[2]);
+    doc.text(heroPrimaryAmount, leftCenterX, cursorY + headerHeight + 9.2, {
+      align: 'center',
+    });
+
+    const pillX = leftColX + 4.2;
+    const pillY = cursorY + headerHeight + 11.8;
+    const pillW = mainColWidth - 8.4;
+    const pillH = actions.length * 6.0 + 2.4;
+    const pillFill: [number, number, number] = isNegative
+      ? [251, 224, 228]
+      : [209, 250, 229];
+
+    doc.setFillColor(pillFill[0], pillFill[1], pillFill[2]);
+    doc.roundedRect(pillX, pillY, pillW, pillH, 1.8, 1.8, 'F');
+
+    let actY = pillY + 4.6;
+    actions.forEach((act) => {
+      const isSender = act.fromMemberId === appendix.memberId;
       drawTransferPairWithArrow(
         doc,
         activeFont,
         'bold',
-        9.2,
-        appendix.memberName,
+        8.3,
+        act.fromMemberName,
         act.toMemberName,
-        subCardX + 3.2,
-        subCardY + 6.2,
-        COLOR_ROSE_DARK,
-        COLOR_ROSE,
+        pillX + 3.2,
+        actY,
+        COLOR_INK,
+        isSender ? [198, 26, 60] : [13, 148, 136],
         COLOR_INK
       );
 
       doc.setFont(activeFont, 'bold');
-      doc.setFontSize(9.8);
-      doc.setTextColor(...COLOR_ROSE_DARK);
+      doc.setFontSize(8.5);
+      doc.setTextColor(...(isSender ? COLOR_ROSE_DARK : COLOR_TEAL_DARK));
       doc.text(
-        `${formatVND(act.amount, false)} đ`,
-        subCardX + subCardW - 3.2,
-        subCardY + 6.2,
+        `${isSender ? '' : '+'}${formatVND(act.amount, false)} đ`,
+        pillX + pillW - 3.2,
+        actY,
         { align: 'right' }
       );
+      actY += 6.0;
+    });
 
-      if (act.toBankInfo) {
-        doc.setFont(activeFont, 'bold');
-        doc.setFontSize(7.4);
-        doc.setTextColor(...COLOR_SLATE);
-        doc.text(`TK nhận: ${act.toBankInfo}`, subCardX + 3.2, subCardY + 13.2);
-      }
-    } else {
-      drawTransferPairWithArrow(
-        doc,
-        activeFont,
-        'bold',
-        9.2,
-        act.fromMemberName,
-        appendix.memberName,
-        subCardX + 3.2,
-        subCardY + 7.5,
-        COLOR_INK,
-        COLOR_TEAL,
-        COLOR_TEAL_DARK
-      );
-
+    const firstBank = actions.find((a) => a.toBankInfo)?.toBankInfo || appendix.bankInfo;
+    if (firstBank) {
       doc.setFont(activeFont, 'bold');
-      doc.setFontSize(9.8);
-      doc.setTextColor(...COLOR_TEAL_DARK);
+      doc.setFontSize(7.6);
+      doc.setTextColor(...COLOR_INK);
       doc.text(
-        `+${formatVND(act.amount, false)} đ`,
-        subCardX + subCardW - 3.2,
-        subCardY + 7.5,
-        { align: 'right' }
+        `TK nhận: ${firstBank.replace(/\s*-\s*/g, '  •  ')}`,
+        leftCenterX,
+        pillY + pillH + 4.2,
+        { align: 'center' }
       );
     }
-  } else {
-    let actY = cursorY + 12.8;
-    actions.forEach((act) => {
-      const isSender = act.fromMemberId === appendix.memberId;
-
-      if (isSender) {
-        drawTransferPairWithArrow(
-          doc,
-          activeFont,
-          'bold',
-          8.4,
-          appendix.memberName,
-          act.toMemberName,
-          marginX + 5,
-          actY,
-          COLOR_ROSE_DARK,
-          COLOR_ROSE,
-          COLOR_INK
-        );
-
-        doc.setFont(activeFont, 'bold');
-        doc.setFontSize(8.6);
-        doc.setTextColor(...COLOR_ROSE_DARK);
-        doc.text(
-          `${formatVND(act.amount, false)} đ`,
-          marginX + leftColW - 4,
-          actY,
-          { align: 'right' }
-        );
-
-        if (act.toBankInfo) {
-          actY += 4.2;
-          doc.setFont(activeFont, 'normal');
-          doc.setFontSize(7.2);
-          doc.setTextColor(...COLOR_SLATE);
-          doc.text(`TK nhận: ${act.toBankInfo}`, marginX + 5, actY);
-        }
-      } else {
-        drawTransferPairWithArrow(
-          doc,
-          activeFont,
-          'bold',
-          8.2,
-          act.fromMemberName,
-          appendix.memberName,
-          marginX + 5,
-          actY,
-          COLOR_INK,
-          COLOR_TEAL,
-          COLOR_TEAL_DARK
-        );
-
-        doc.setFont(activeFont, 'bold');
-        doc.setFontSize(8.4);
-        doc.setTextColor(...COLOR_TEAL_DARK);
-        doc.text(
-          `+${formatVND(act.amount, false)} đ`,
-          marginX + leftColW - 4,
-          actY,
-          { align: 'right' }
-        );
-      }
-      actY += 5.8;
-    });
   }
 
-  // Dòng công thức tính nhanh dưới đáy hộp Quyết toán cá nhân (dùng dấu '-' chuẩn ASCII)
-  const formulaY = cursorY + blockH - 3.2;
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.18);
-  doc.line(marginX + 4.5, formulaY - 3.8, marginX + leftColW - 3.5, formulaY - 3.8);
+  // 4. Dòng công thức tính nhanh kèm icon Calculator dưới đáy hộp Quyết toán cá nhân
+  const formulaLineY = cursorY + blockHeight - 7.4;
+  doc.setDrawColor(226, 214, 220);
+  doc.setLineWidth(0.2);
+  doc.line(leftColX + 4.2, formulaLineY, leftColX + mainColWidth - 4.2, formulaLineY);
+
+  drawIconBadge(
+    doc,
+    'Calculator',
+    leftColX + 4.2,
+    cursorY + blockHeight - 5.8,
+    3.8,
+    [100, 116, 139]
+  );
   doc.setFont(activeFont, 'normal');
-  doc.setFontSize(6.8);
-  doc.setTextColor(...COLOR_MUTED);
+  doc.setFontSize(6.75);
+  doc.setTextColor(...COLOR_SLATE);
   doc.text(
     `Tính toán: Đã chi (${formatVND(appendix.paidExpense, false)}) - Phải chịu (${formatVND(appendix.owedExpense, false)}) = ${balPrefix}${formatVND(appendix.balance, false)} đ`,
-    marginX + 4.8,
-    formulaY
+    leftColX + 9.0,
+    cursorY + blockHeight - 3.0
   );
 
-  // Vẽ Cột phải: Biểu đồ Chi phí theo Hạng mục kèm Icon
-  if (appendix.byCategory.length > 0) {
-    drawCompactChartCard(
-      doc,
-      activeFont,
-      `Chi phí theo Hạng mục (${appendix.memberName})`,
-      'PieChart',
-      [13, 148, 136],
-      [204, 251, 241],
-      appendix.byCategory.slice(0, 6).map((c) => {
-        const theme = CATEGORY_THEME_MAP[c.categoryIcon] || CATEGORY_THEME_MAP.Package;
-        return {
-          label: shortenCategoryLabelForTable(c.categoryName),
-          iconName: c.categoryIcon || 'Package',
-          iconStroke: theme.stroke,
-          iconBg: theme.bg,
-          barColor: theme.bar,
-          amount: c.amount,
-          count: c.count,
-          percentage: c.percentage,
-        };
-      }),
-      marginX + leftColW + gap,
-      cursorY,
-      rightColW,
-      blockH
-    );
-  }
+  // Vẽ Cột phải: Thẻ Chi phí theo Hạng mục đồng bộ chiều cao & header
+  drawAppendixCategoryCard(
+    doc,
+    activeFont,
+    appendix.memberName,
+    appendix.byCategory,
+    rightColX,
+    cursorY,
+    mainColWidth,
+    headerHeight,
+    blockHeight
+  );
 
-  cursorY += blockH + 4.5;
+  cursorY += blockHeight + 4.8;
 
   // Bảng các khoản thành viên đã chi
   cursorY = ensurePageSpace(doc, cursorY, 20);
