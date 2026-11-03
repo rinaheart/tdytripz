@@ -11,6 +11,8 @@ import {
   type ReportCategoryBreakdown,
   type ReportDayBreakdown,
   buildExpenseReportData,
+  buildReportFileName,
+  formatReportLocationSegment,
   formatSpentAtReportVN,
   sanitizeFileNameSegment,
   shortenCategoryLabelForTable,
@@ -28,25 +30,36 @@ export {
   type ReportCategoryBreakdown,
   type ReportDayBreakdown,
   buildExpenseReportData,
+  buildReportFileName,
+  formatReportLocationSegment,
   formatSpentAtReportVN,
   sanitizeFileNameSegment,
   shortenCategoryLabelForTable,
 };
 
 // ============================================================================
-// CDN LOADER CHO JSPDF & JSPDF-AUTOTABLE + FONT ROBOTO UNICODE TIẾNG VIỆT
+// CDN LOADER CHO JSPDF & JSPDF-AUTOTABLE + FONT PLUS JAKARTA SANS (ĐỒNG NHẤT WEB APP)
 // ============================================================================
 
 const JSPDF_CDN_URL = 'https://cdn.jsdelivr.net/npm/jspdf@4.2.1/dist/jspdf.umd.min.js';
 const AUTOTABLE_CDN_URL =
   'https://cdn.jsdelivr.net/npm/jspdf-autotable@5.0.9/dist/jspdf.plugin.autotable.min.js';
-const ROBOTO_REGULAR_TTF_URL =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.12/fonts/Roboto/Roboto-Regular.ttf';
-const ROBOTO_MEDIUM_TTF_URL =
-  'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.12/fonts/Roboto/Roboto-Medium.ttf';
 
-let cachedRobotoRegularBase64: string | null = null;
-let cachedRobotoMediumBase64: string | null = null;
+// Hệ thống Font Plus Jakarta Sans Unicode tiếng Việt đồng nhất 100% với Web App (kèm fallback dự phòng)
+const PLUS_JAKARTA_REGULAR_URLS = [
+  'https://fonts.gstatic.com/s/plusjakartasans/v12/LDIbaomQNQcsA88c7O9yZ4KMCoOg4IA6-91aHEjcWuA_m07NShXUEKmARA.ttf', // Medium 500 cho độ nét chữ nội dung tối ưu
+  'https://cdn.jsdelivr.net/gh/tokotype/PlusJakartaSans@master/fonts/ttf/PlusJakartaSans-Medium.ttf',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.12/fonts/Roboto/Roboto-Regular.ttf',
+];
+
+const PLUS_JAKARTA_BOLD_URLS = [
+  'https://fonts.gstatic.com/s/plusjakartasans/v12/LDIbaomQNQcsA88c7O9yZ4KMCoOg4IA6-91aHEjcWuA_TknNShXUEKmARA.ttf', // Bold 700 thực thụ
+  'https://cdn.jsdelivr.net/gh/tokotype/PlusJakartaSans@master/fonts/ttf/PlusJakartaSans-Bold.ttf',
+  'https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.12/fonts/Roboto/Roboto-Medium.ttf',
+];
+
+let cachedFontRegularBase64: string | null = null;
+let cachedFontBoldBase64: string | null = null;
 
 function loadExternalScript(src: string, timeoutMs = 12000): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -102,34 +115,40 @@ function arrayBufferToBase64(buffer: ArrayBuffer): string {
   return window.btoa(binary);
 }
 
-async function fetchFontBase64(url: string, timeoutMs = 10000): Promise<string> {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, { mode: 'cors', signal: controller.signal });
-    if (!res.ok) {
-      throw new Error(`Không thể tải font Unicode từ CDN (${res.status})`);
+async function fetchFontBase64WithFallbacks(urls: string[], timeoutMs = 9000): Promise<string> {
+  let lastErr: unknown = null;
+  for (const url of urls) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(url, { mode: 'cors', signal: controller.signal });
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
+      }
+      const buf = await res.arrayBuffer();
+      return arrayBufferToBase64(buf);
+    } catch (err) {
+      lastErr = err;
+    } finally {
+      window.clearTimeout(timer);
     }
-    const buf = await res.arrayBuffer();
-    return arrayBufferToBase64(buf);
-  } finally {
-    window.clearTimeout(timer);
   }
+  throw lastErr || new Error('Không thể tải font Unicode từ CDN');
 }
 
-async function ensureRobotoFontsLoaded(): Promise<{ regular: string; medium: string } | null> {
+async function ensurePlusJakartaFontsLoaded(): Promise<{ regular: string; bold: string } | null> {
   try {
-    if (!cachedRobotoRegularBase64 || !cachedRobotoMediumBase64) {
-      const [reg, med] = await Promise.all([
-        fetchFontBase64(ROBOTO_REGULAR_TTF_URL),
-        fetchFontBase64(ROBOTO_MEDIUM_TTF_URL),
+    if (!cachedFontRegularBase64 || !cachedFontBoldBase64) {
+      const [reg, bold] = await Promise.all([
+        fetchFontBase64WithFallbacks(PLUS_JAKARTA_REGULAR_URLS),
+        fetchFontBase64WithFallbacks(PLUS_JAKARTA_BOLD_URLS),
       ]);
-      cachedRobotoRegularBase64 = reg;
-      cachedRobotoMediumBase64 = med;
+      cachedFontRegularBase64 = reg;
+      cachedFontBoldBase64 = bold;
     }
     return {
-      regular: cachedRobotoRegularBase64,
-      medium: cachedRobotoMediumBase64,
+      regular: cachedFontRegularBase64,
+      bold: cachedFontBoldBase64,
     };
   } catch {
     return null;
@@ -137,169 +156,240 @@ async function ensureRobotoFontsLoaded(): Promise<{ regular: string; medium: str
 }
 
 // ============================================================================
-// HỆ THỐNG RENDER ICON LUCIDE (TƯƠNG ĐỒNG 100% VỚI WEB APP) + VECTOR ARROW SYMBOL
+// HỆ THỐNG RENDER ICON VECTOR NGUYÊN BẢN 100% (KHÔNG DÙNG ẢNH PNG/CANVAS)
+// Đảm bảo khi phóng lớn (Zoom 400% - 1600%) mọi biểu tượng đều sắc nét tuyệt đối
 // ============================================================================
 
-const LUCIDE_ICON_PATHS: Record<string, string[]> = {
-  Plane: [
-    'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z',
-  ],
-  Car: [
-    'M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2',
-    'M7 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0',
-    'M15 17a2 2 0 1 0 4 0 2 2 0 1 0-4 0',
-    'M9 17h6',
-  ],
-  Utensils: [
-    'M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2',
-    'M7 2v20',
-    'M21 15V2v0a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7',
-  ],
-  Hotel: [
-    'M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z',
-    'M9 22v-4h6v4',
-    'M8 6h.01',
-    'M16 6h.01',
-    'M12 6h.01',
-    'M12 10h.01',
-    'M12 14h.01',
-    'M16 10h.01',
-    'M16 14h.01',
-    'M8 10h.01',
-    'M8 14h.01',
-  ],
-  Ticket: [
-    'M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z',
-    'M13 5v2',
-    'M13 17v2',
-    'M13 11v2',
-  ],
-  Package: [
-    'm7.5 4.27 9 5.15',
-    'M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z',
-    'm3.3 7 8.7 5 8.7-5',
-    'M12 22V12',
-  ],
-  Wallet: [
-    'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1',
-    'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4',
-  ],
-  Users: [
-    'M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2',
-    'M5 7a4 4 0 1 0 8 0 4 4 0 1 0-8 0',
-    'M22 21v-2a4 4 0 0 0-3-3.87',
-    'M16 3.13a4 4 0 0 1 0 7.75',
-  ],
-  PieChart: [
-    'M21.21 15.89A10 10 0 1 1 8 2.83',
-    'M22 12A10 10 0 0 0 12 2v10z',
-  ],
-  Award: [
-    'M6 9a6 6 0 1 0 12 0A6 6 0 1 0 6 9',
-    'M15.477 12.89 17 22l-5-3-5 3 1.523-9.11',
-  ],
-  Calendar: [
-    'M8 2v4',
-    'M16 2v4',
-    'M3 10h18',
-    'M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
-  ],
-  ArrowRightLeft: [
-    'm16 3 4 4-4 4',
-    'M20 7H4',
-    'm8 21-4-4 4-4',
-    'M4 17h16',
-  ],
-  Send: [
-    'm22 2-7 20-4-9-9-4Z',
-    'M22 2 11 13',
-  ],
-  CheckCircle: [
-    'M22 11.08V12a10 10 0 1 1-5.93-9.14',
-    'm9 11 3 3L22 4',
-  ],
-  MapPin: [
-    'M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z',
-    'M9 10a3 3 0 1 0 6 0 3 3 0 1 0-6 0',
-  ],
-  RefreshCw: [
-    'M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8',
-    'M21 3v5h-5',
-    'M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16',
-    'M8 16H3v5',
-  ],
-  Calculator: [
-    'M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z',
-    'M8 6h8v4H8V6z',
-    'M8 14h.01',
-    'M12 14h.01',
-    'M16 14h.01',
-    'M8 18h.01',
-    'M12 18h.01',
-    'M16 18h.01',
-  ],
-};
-
-const iconDataUrlCache = new Map<string, string>();
-
-function renderLucideIconDataUrl(
+function drawVectorStrokeIconGeometry(
+  doc: any,
   iconName: string,
-  strokeRgb: [number, number, number],
-  bgRgb?: [number, number, number]
-): string | null {
-  if (typeof document === 'undefined' || typeof Path2D === 'undefined') return null;
+  originX: number,
+  originY: number,
+  boxSize: number,
+  strokeRgb: [number, number, number]
+): void {
+  const s = boxSize / 24;
+  const tx = (u: number) => originX + u * s;
+  const ty = (v: number) => originY + v * s;
+  const ts = (len: number) => len * s;
 
-  const cacheKey = `${iconName}_${strokeRgb.join(',')}_${bgRgb ? bgRgb.join(',') : 'none'}`;
-  const cached = iconDataUrlCache.get(cacheKey);
-  if (cached) return cached;
+  doc.setDrawColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
+  doc.setFillColor(strokeRgb[0], strokeRgb[1], strokeRgb[2]);
+  const lw = Math.max(0.24, boxSize * 0.088);
+  doc.setLineWidth(lw);
 
-  try {
-    const size = 96;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    if (bgRgb) {
-      ctx.fillStyle = `rgb(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]})`;
-      const r = 22;
-      ctx.beginPath();
-      ctx.moveTo(r, 0);
-      ctx.lineTo(size - r, 0);
-      ctx.quadraticCurveTo(size, 0, size, r);
-      ctx.lineTo(size, size - r);
-      ctx.quadraticCurveTo(size, size, size - r, size);
-      ctx.lineTo(r, size);
-      ctx.quadraticCurveTo(0, size, 0, size - r);
-      ctx.lineTo(0, r);
-      ctx.quadraticCurveTo(0, 0, r, 0);
-      ctx.closePath();
-      ctx.fill();
+  switch (iconName) {
+    case 'Wallet': {
+      doc.roundedRect(tx(3), ty(6.6), ts(17.6), ts(13.4), ts(2.0), ts(2.0), 'S');
+      doc.line(tx(4.2), ty(6.6), tx(16.2), ty(3.8));
+      doc.line(tx(16.2), ty(3.8), tx(17.8), ty(6.6));
+      doc.roundedRect(tx(14.8), ty(11.3), ts(5.8), ts(4.0), ts(1.0), ts(1.0), 'S');
+      doc.circle(tx(16.9), ty(13.3), ts(0.6), 'F');
+      break;
     }
-
-    const pad = bgRgb ? 20 : 6;
-    const scale = (size - pad * 2) / 24;
-    ctx.save();
-    ctx.translate(pad, pad);
-    ctx.scale(scale, scale);
-    ctx.strokeStyle = `rgb(${strokeRgb[0]}, ${strokeRgb[1]}, ${strokeRgb[2]})`;
-    ctx.lineWidth = 2.25;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    const paths = LUCIDE_ICON_PATHS[iconName] || LUCIDE_ICON_PATHS.Package;
-    for (const d of paths) {
-      const p = new Path2D(d);
-      ctx.stroke(p);
+    case 'Users': {
+      doc.circle(tx(9.0), ty(7.5), ts(3.3), 'S');
+      doc.lines(
+        [[ts(0.2), ts(-4.6), ts(11.4), ts(-4.6), ts(11.6), 0]],
+        tx(3.2),
+        ty(19.5),
+        [1, 1],
+        'S',
+        false
+      );
+      doc.circle(tx(16.4), ty(8.2), ts(2.5), 'S');
+      doc.lines(
+        [[ts(2.6), ts(0.2), ts(4.4), ts(1.8), ts(4.6), ts(4.6)]],
+        tx(16.2),
+        ty(14.6),
+        [1, 1],
+        'S',
+        false
+      );
+      break;
     }
-    ctx.restore();
-
-    const dataUrl = canvas.toDataURL('image/png');
-    iconDataUrlCache.set(cacheKey, dataUrl);
-    return dataUrl;
-  } catch {
-    return null;
+    case 'PieChart': {
+      doc.circle(tx(12), ty(12), ts(8.6), 'S');
+      doc.line(tx(12), ty(3.4), tx(12), ty(12));
+      doc.line(tx(12), ty(12), tx(20.6), ty(12));
+      doc.line(tx(12), ty(12), tx(18.1), ty(5.9));
+      break;
+    }
+    case 'Award': {
+      doc.circle(tx(12), ty(9.0), ts(5.6), 'S');
+      doc.lines(
+        [
+          [ts(-1.4), ts(7.4)],
+          [ts(4.8), ts(-2.5)],
+          [ts(4.8), ts(2.5)],
+          [ts(-1.4), ts(-7.4)],
+        ],
+        tx(8.6),
+        ty(13.8),
+        [1, 1],
+        'S',
+        false
+      );
+      break;
+    }
+    case 'Calendar': {
+      doc.roundedRect(tx(3.2), ty(4.6), ts(17.6), ts(16.4), ts(2.0), ts(2.0), 'S');
+      doc.line(tx(3.2), ty(9.8), tx(20.8), ty(9.8));
+      doc.line(tx(8.0), ty(2.6), tx(8.0), ty(6.2));
+      doc.line(tx(16.0), ty(2.6), tx(16.0), ty(6.2));
+      break;
+    }
+    case 'ArrowRightLeft': {
+      doc.line(tx(4), ty(7.5), tx(20), ty(7.5));
+      doc.line(tx(16.2), ty(4.0), tx(20), ty(7.5));
+      doc.line(tx(16.2), ty(11.0), tx(20), ty(7.5));
+      doc.line(tx(20), ty(16.5), tx(4), ty(16.5));
+      doc.line(tx(7.8), ty(13.0), tx(4), ty(16.5));
+      doc.line(tx(7.8), ty(20.0), tx(4), ty(16.5));
+      break;
+    }
+    case 'Send': {
+      doc.lines(
+        [
+          [ts(-7.0), ts(19.0)],
+          [ts(-3.6), ts(-8.4)],
+          [ts(-8.4), ts(-3.6)],
+        ],
+        tx(21.4),
+        ty(2.6),
+        [1, 1],
+        'S',
+        true
+      );
+      doc.line(tx(21.4), ty(2.6), tx(10.8), ty(13.2));
+      break;
+    }
+    case 'CheckCircle': {
+      doc.circle(tx(12), ty(12), ts(8.8), 'S');
+      doc.line(tx(8.0), ty(12.2), tx(10.8), ty(15.0));
+      doc.line(tx(10.8), ty(15.0), tx(16.4), ty(9.0));
+      break;
+    }
+    case 'MapPin': {
+      doc.circle(tx(12), ty(9.8), ts(6.4), 'S');
+      doc.line(tx(6.6), ty(13.4), tx(12), ty(21.2));
+      doc.line(tx(17.4), ty(13.4), tx(12), ty(21.2));
+      doc.circle(tx(12), ty(9.8), ts(2.3), 'S');
+      break;
+    }
+    case 'Plane': {
+      doc.lines(
+        [
+          [ts(-4.4), ts(4.4)],
+          [ts(-8.4), ts(-1.8)],
+          [ts(-1.4), ts(1.4)],
+          [ts(5.8), ts(3.8)],
+          [ts(-3.0), ts(3.0)],
+          [ts(-3.0), ts(-0.5)],
+          [ts(-1.0), ts(1.0)],
+          [ts(3.2), ts(1.8)],
+          [ts(1.8), ts(3.2)],
+          [ts(1.0), ts(-1.0)],
+          [ts(-0.5), ts(-3.0)],
+          [ts(3.0), ts(-3.0)],
+          [ts(3.8), ts(5.8)],
+          [ts(1.4), ts(-1.4)],
+          [ts(-1.8), ts(-8.4)],
+          [ts(4.4), ts(-4.4)],
+          [ts(0.8), ts(-1.8)],
+          [ts(-1.8), ts(0.8)],
+        ],
+        tx(19.5),
+        ty(3.5),
+        [1, 1],
+        'F',
+        true
+      );
+      break;
+    }
+    case 'Car': {
+      doc.lines(
+        [
+          [ts(2.0), ts(-4.2)],
+          [ts(9.2), 0],
+          [ts(2.0), ts(4.2)],
+        ],
+        tx(5.4),
+        ty(11.0),
+        [1, 1],
+        'S',
+        true
+      );
+      doc.roundedRect(tx(3.2), ty(11.0), ts(17.6), ts(5.2), ts(1.4), ts(1.4), 'S');
+      doc.circle(tx(7.4), ty(16.6), ts(1.8), 'S');
+      doc.circle(tx(16.6), ty(16.6), ts(1.8), 'S');
+      break;
+    }
+    case 'Utensils': {
+      doc.line(tx(5.2), ty(3.2), tx(5.2), ty(9.4));
+      doc.line(tx(7.6), ty(3.2), tx(7.6), ty(9.4));
+      doc.line(tx(10.0), ty(3.2), tx(10.0), ty(9.4));
+      doc.line(tx(5.2), ty(9.4), tx(10.0), ty(9.4));
+      doc.line(tx(7.6), ty(9.4), tx(7.6), ty(20.6));
+      doc.line(tx(17.6), ty(3.2), tx(17.6), ty(20.6));
+      doc.lines(
+        [
+          [ts(-3.2), ts(2.2)],
+          [0, ts(6.8)],
+          [ts(3.2), 0],
+        ],
+        tx(17.6),
+        ty(3.2),
+        [1, 1],
+        'S',
+        false
+      );
+      break;
+    }
+    case 'Hotel': {
+      doc.roundedRect(tx(5.2), ty(3.0), ts(13.6), ts(18.0), ts(1.4), ts(1.4), 'S');
+      doc.rect(tx(9.6), ty(16.2), ts(4.8), ts(4.8), 'S');
+      const wins = [
+        [8.0, 5.8],
+        [13.4, 5.8],
+        [8.0, 9.4],
+        [13.4, 9.4],
+        [8.0, 12.8],
+        [13.4, 12.8],
+      ];
+      wins.forEach(([wx, wy]) => {
+        doc.rect(tx(wx), ty(wy), ts(2.4), ts(1.8), 'F');
+      });
+      break;
+    }
+    case 'Ticket': {
+      doc.roundedRect(tx(2.6), ty(5.6), ts(18.8), ts(12.8), ts(1.8), ts(1.8), 'S');
+      doc.line(tx(13.4), ty(6.8), tx(13.4), ty(8.8));
+      doc.line(tx(13.4), ty(11.0), tx(13.4), ty(13.0));
+      doc.line(tx(13.4), ty(15.2), tx(13.4), ty(17.2));
+      break;
+    }
+    default: {
+      // Package (hình lập phương isometric chuẩn vector)
+      doc.lines(
+        [
+          [ts(8.2), ts(4.6)],
+          [0, ts(9.2)],
+          [ts(-8.2), ts(4.6)],
+          [ts(-8.2), ts(-4.6)],
+          [0, ts(-9.2)],
+        ],
+        tx(12.0),
+        ty(2.8),
+        [1, 1],
+        'S',
+        true
+      );
+      doc.line(tx(3.8), ty(7.4), tx(12.0), ty(12.0));
+      doc.line(tx(20.2), ty(7.4), tx(12.0), ty(12.0));
+      doc.line(tx(12.0), ty(12.0), tx(12.0), ty(21.2));
+      break;
+    }
   }
 }
 
@@ -312,15 +402,19 @@ function drawIconBadge(
   strokeRgb: [number, number, number],
   bgRgb?: [number, number, number]
 ): void {
-  const dataUrl = renderLucideIconDataUrl(iconName, strokeRgb, bgRgb);
-  if (dataUrl) {
-    doc.addImage(dataUrl, 'PNG', x, y, sizeMm, sizeMm);
-    return;
-  }
   if (bgRgb) {
     doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
-    doc.roundedRect(x, y, sizeMm, sizeMm, sizeMm * 0.22, sizeMm * 0.22, 'F');
+    doc.roundedRect(x, y, sizeMm, sizeMm, sizeMm * 0.23, sizeMm * 0.23, 'F');
   }
+  const pad = bgRgb ? sizeMm * 0.2 : sizeMm * 0.05;
+  drawVectorStrokeIconGeometry(
+    doc,
+    iconName,
+    x + pad,
+    y + pad,
+    sizeMm - pad * 2,
+    strokeRgb
+  );
 }
 
 /**
@@ -1007,7 +1101,7 @@ export function computeAppendixGridMetrics(
   const visibleCats = Math.min(6, Math.max(0, categoryCount));
   const rightNeededH = visibleCats > 0 ? headerHeight + visibleCats * 8.0 + 3.4 : 50;
   const leftNeededH =
-    actionCount > 1 ? headerHeight + 21 + actionCount * 6.2 + 9.5 : 51.5;
+    actionCount > 1 ? headerHeight + 23.5 + actionCount * 6.0 + 10.5 : 51.5;
   const blockHeight = Math.max(51.5, rightNeededH, leftNeededH);
 
   return {
@@ -1024,310 +1118,49 @@ export function computeAppendixGridMetrics(
   };
 }
 
-const flatIconCache = new Map<string, string>();
-
 /**
- * Render hệ thống Icon Minimalist Flat-Design sắc nét (Filled Geometric Shapes)
- * chuyên biệt cho Phụ lục báo cáo cá nhân theo đúng thiết kế chuẩn Infographic.
+ * Vẽ đa giác hoặc hình khép kín bằng lệnh vector gốc của jsPDF (`doc.lines`)
+ * từ danh sách các đỉnh tuyệt đối `[[x0, y0], [x1, y1], ...]`.
  */
-function renderFlatAppendixIconDataUrl(
-  kind: string,
-  fgRgb: [number, number, number],
-  bgRgb?: [number, number, number]
-): string | null {
-  if (typeof document === 'undefined') return null;
-  const key = `flat_${kind}_${fgRgb.join(',')}_${bgRgb ? bgRgb.join(',') : 'none'}`;
-  const cached = flatIconCache.get(key);
-  if (cached) return cached;
-
-  try {
-    const size = 128;
-    const canvas = document.createElement('canvas');
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return null;
-
-    if (bgRgb) {
-      ctx.fillStyle = `rgb(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]})`;
-      ctx.beginPath();
-      ctx.arc(size / 2, size / 2, size / 2 - 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    const fg = `rgb(${fgRgb[0]}, ${fgRgb[1]}, ${fgRgb[2]})`;
-    const cutBg = bgRgb ? `rgb(${bgRgb[0]}, ${bgRgb[1]}, ${bgRgb[2]})` : '#ffffff';
-    ctx.fillStyle = fg;
-    ctx.strokeStyle = fg;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
-
-    const s = size / 24;
-    ctx.save();
-    ctx.scale(s, s);
-
-    switch (kind) {
-      case 'Wallet': {
-        // Thân ví phẳng bo góc + nắp ví trên + khóa cài bên phải
-        ctx.beginPath();
-        ctx.roundRect(5.2, 7.6, 13.4, 10.2, 2.2);
-        ctx.fill();
-
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.moveTo(6.5, 7.6);
-        ctx.lineTo(15.8, 5.4);
-        ctx.quadraticCurveTo(17.4, 5.1, 17.6, 6.8);
-        ctx.stroke();
-
-        ctx.fillStyle = cutBg;
-        ctx.beginPath();
-        ctx.roundRect(14.0, 10.6, 5.2, 4.2, 1.4);
-        ctx.fill();
-
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.roundRect(14.6, 11.2, 4.2, 3.0, 1.1);
-        ctx.fill();
-
-        ctx.fillStyle = cutBg;
-        ctx.beginPath();
-        ctx.arc(16.2, 12.7, 0.75, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      }
-      case 'Users': {
-        // 2 hình người phẳng (Flat geometric silhouettes)
-        // Người phụ bên phải
-        ctx.beginPath();
-        ctx.arc(15.6, 9.2, 2.1, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(12.2, 16.8);
-        ctx.quadraticCurveTo(12.4, 12.7, 15.6, 12.7);
-        ctx.quadraticCurveTo(18.8, 12.7, 19.0, 16.8);
-        ctx.closePath();
-        ctx.fill();
-
-        // Viền tách nhẹ giữa 2 người
-        ctx.strokeStyle = cutBg;
-        ctx.lineWidth = 1.1;
-        ctx.beginPath();
-        ctx.arc(9.5, 8.6, 2.65, 0, Math.PI * 2);
-        ctx.stroke();
-
-        // Người chính bên trái
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.arc(9.5, 8.6, 2.5, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.moveTo(5.0, 17.2);
-        ctx.quadraticCurveTo(5.2, 12.3, 9.5, 12.3);
-        ctx.quadraticCurveTo(13.8, 12.3, 14.0, 17.2);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'CheckSolid': {
-        // Dấu tích trắng đậm trên nền tròn tím đặc
-        ctx.strokeStyle = fg;
-        ctx.lineWidth = 2.6;
-        ctx.beginPath();
-        ctx.moveTo(7.2, 12.3);
-        ctx.lineTo(10.6, 15.7);
-        ctx.lineTo(17.0, 8.8);
-        ctx.stroke();
-        break;
-      }
-      case 'RefreshCw': {
-        // Mũi tên vòng tròn cân đối (Circular balance arrow)
-        ctx.strokeStyle = fg;
-        ctx.lineWidth = 2.35;
-        ctx.beginPath();
-        ctx.arc(12, 12, 5.5, 0.35, Math.PI * 1.78);
-        ctx.stroke();
-
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.moveTo(16.9, 5.7);
-        ctx.lineTo(17.7, 10.3);
-        ctx.lineTo(13.2, 9.3);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'PieChartHeader': {
-        // Biểu đồ tròn phẳng trắng trên thanh tiêu đề xanh
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.moveTo(11.3, 12.7);
-        ctx.arc(11.3, 12.7, 7.2, Math.PI * 0.02, Math.PI * 1.48);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.moveTo(12.7, 11.3);
-        ctx.arc(12.7, 11.3, 7.2, -Math.PI * 0.48, -Math.PI * 0.02);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'Plane': {
-        // Máy bay phẳng nghiêng 45 độ
-        const p = new Path2D(
-          'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z'
-        );
-        ctx.fill(p);
-        break;
-      }
-      case 'Utensils': {
-        // Nĩa & Dao phẳng (Flat Fork & Knife)
-        ctx.lineWidth = 1.65;
-        ctx.beginPath();
-        ctx.moveTo(7.2, 5.2);
-        ctx.lineTo(7.2, 10.2);
-        ctx.moveTo(9.2, 5.2);
-        ctx.lineTo(9.2, 10.2);
-        ctx.moveTo(11.2, 5.2);
-        ctx.lineTo(11.2, 10.2);
-        ctx.stroke();
-
-        ctx.beginPath();
-        ctx.roundRect(6.5, 9.4, 5.4, 2.4, 1.1);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.roundRect(8.2, 11.2, 2.0, 7.8, 0.9);
-        ctx.fill();
-
-        // Dao bên phải
-        ctx.beginPath();
-        ctx.moveTo(15.8, 5.0);
-        ctx.quadraticCurveTo(13.2, 5.5, 13.2, 12.2);
-        ctx.lineTo(14.8, 12.8);
-        ctx.lineTo(14.8, 18.0);
-        ctx.arc(15.7, 18.0, 0.9, Math.PI, 0, true);
-        ctx.lineTo(16.6, 5.0);
-        ctx.closePath();
-        ctx.fill();
-        break;
-      }
-      case 'Hotel': {
-        // Tòa nhà khách sạn phẳng kèm ô cửa sổ
-        ctx.beginPath();
-        ctx.roundRect(7.0, 5.0, 10.0, 13.5, 1.2);
-        ctx.fill();
-        ctx.fillRect(5.6, 17.4, 12.8, 1.5);
-
-        ctx.fillStyle = cutBg;
-        const winCoords = [
-          [8.8, 6.8],
-          [13.0, 6.8],
-          [8.8, 9.8],
-          [13.0, 9.8],
-          [8.8, 12.8],
-          [13.0, 12.8],
-        ];
-        winCoords.forEach(([wx, wy]) => {
-          ctx.fillRect(wx, wy, 2.1, 1.8);
-        });
-        ctx.beginPath();
-        ctx.roundRect(10.6, 15.4, 2.8, 3.2, 0.6);
-        ctx.fill();
-        break;
-      }
-      case 'MoreDots': {
-        // 3 dấu chấm tròn ngang cho hạng mục Khác (...)
-        [7.2, 12.0, 16.8].forEach((cx) => {
-          ctx.beginPath();
-          ctx.arc(cx, 12.0, 1.55, 0, Math.PI * 2);
-          ctx.fill();
-        });
-        break;
-      }
-      case 'Car': {
-        // Ô tô góc nhìn chính diện phẳng (Flat Front-View Car)
-        ctx.beginPath();
-        ctx.moveTo(7.4, 7.2);
-        ctx.lineTo(16.6, 7.2);
-        ctx.lineTo(18.4, 11.0);
-        ctx.lineTo(5.6, 11.0);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.roundRect(4.8, 10.5, 14.4, 5.2, 1.8);
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.roundRect(5.6, 14.8, 2.4, 2.8, 0.8);
-        ctx.roundRect(16.0, 14.8, 2.4, 2.8, 0.8);
-        ctx.fill();
-
-        ctx.fillStyle = cutBg;
-        ctx.beginPath();
-        ctx.moveTo(8.2, 8.2);
-        ctx.lineTo(15.8, 8.2);
-        ctx.lineTo(16.9, 10.5);
-        ctx.lineTo(7.1, 10.5);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(7.4, 13.1, 1.1, 0, Math.PI * 2);
-        ctx.arc(16.6, 13.1, 1.1, 0, Math.PI * 2);
-        ctx.fill();
-        break;
-      }
-      case 'Calculator': {
-        ctx.strokeStyle = fg;
-        ctx.lineWidth = 2.0;
-        ctx.beginPath();
-        ctx.roundRect(4.5, 2.5, 15.0, 19.0, 2.4);
-        ctx.stroke();
-
-        ctx.fillStyle = fg;
-        ctx.beginPath();
-        ctx.roundRect(7.0, 5.2, 10.0, 3.6, 0.9);
-        ctx.fill();
-
-        const dots = [
-          [8.2, 12.2],
-          [12.0, 12.2],
-          [15.8, 12.2],
-          [8.2, 15.5],
-          [12.0, 15.5],
-          [15.8, 15.5],
-          [8.2, 18.6],
-          [12.0, 18.6],
-          [15.8, 18.6],
-        ];
-        dots.forEach(([dx, dy]) => {
-          ctx.beginPath();
-          ctx.arc(dx, dy, 1.05, 0, Math.PI * 2);
-          ctx.fill();
-        });
-        break;
-      }
-      default: {
-        const paths = LUCIDE_ICON_PATHS[kind] || LUCIDE_ICON_PATHS.Package;
-        ctx.lineWidth = 2.3;
-        for (const d of paths) {
-          ctx.stroke(new Path2D(d));
-        }
-        break;
-      }
-    }
-
-    ctx.restore();
-    const url = canvas.toDataURL('image/png');
-    flatIconCache.set(key, url);
-    return url;
-  } catch {
-    return null;
+function drawVectorPolygon(
+  doc: any,
+  points: Array<[number, number]>,
+  style: 'F' | 'S' | 'FD' = 'F',
+  closed = true
+): void {
+  if (points.length < 2) return;
+  const [x0, y0] = points[0];
+  const deltas: Array<[number, number]> = [];
+  for (let i = 1; i < points.length; i++) {
+    deltas.push([points[i][0] - points[i - 1][0], points[i][1] - points[i - 1][1]]);
   }
+  doc.lines(deltas, x0, y0, [1, 1], style, closed);
 }
 
+/**
+ * Tạo danh sách điểm xấp xỉ cung tròn mượt bằng đa giác vector độ phân giải cao
+ */
+function buildArcPoints(
+  cx: number,
+  cy: number,
+  r: number,
+  startRad: number,
+  endRad: number,
+  steps = 20
+): Array<[number, number]> {
+  const pts: Array<[number, number]> = [];
+  for (let i = 0; i <= steps; i++) {
+    const t = startRad + ((endRad - startRad) * i) / steps;
+    pts.push([cx + Math.cos(t) * r, cy + Math.sin(t) * r]);
+  }
+  return pts;
+}
+
+/**
+ * Vẽ trực tiếp 100% Vector cho hệ thống Icon Minimalist Flat-Design
+ * trong Phụ lục báo cáo cá nhân (không dùng ảnh bitmap / canvas),
+ * đảm bảo phóng to 800%–1600% vẫn giữ nguyên độ sắc nét tuyệt đối.
+ */
 function drawFlatAppendixIcon(
   doc: any,
   kind: string,
@@ -1337,28 +1170,333 @@ function drawFlatAppendixIcon(
   fgRgb: [number, number, number],
   bgRgb?: [number, number, number]
 ): void {
-  const url = renderFlatAppendixIconDataUrl(kind, fgRgb, bgRgb);
-  if (url) {
-    doc.addImage(
-      url,
-      'PNG',
-      centerX - diameterMm / 2,
-      centerY - diameterMm / 2,
-      diameterMm,
-      diameterMm
-    );
-    return;
-  }
   if (bgRgb) {
     doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
     doc.circle(centerX, centerY, diameterMm / 2, 'F');
   }
+
+  const cutRgb: [number, number, number] = bgRgb || [255, 255, 255];
+  const s = diameterMm / 24;
+  const originX = centerX - diameterMm / 2;
+  const originY = centerY - diameterMm / 2;
+  const tx = (vx: number) => originX + vx * s;
+  const ty = (vy: number) => originY + vy * s;
+  const tr = (vr: number) => vr * s;
+
+  doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+  doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+  doc.setLineCap('round');
+  doc.setLineJoin('round');
+
+  switch (kind) {
+    case 'Wallet': {
+      // Nắp ví nghiêng phía trên
+      drawVectorPolygon(
+        doc,
+        [
+          [tx(6.4), ty(8.2)],
+          [tx(15.6), ty(5.3)],
+          [tx(17.4), ty(6.1)],
+          [tx(17.4), ty(8.4)],
+        ],
+        'F',
+        true
+      );
+      // Khe trắng tách nhẹ giữa nắp ví và thân ví
+      doc.setDrawColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      doc.setLineWidth(Math.max(0.18, s * 0.7));
+      doc.line(tx(6.0), ty(7.65), tx(17.8), ty(7.65));
+
+      // Thân ví phẳng bo góc
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.roundedRect(tx(5.2), ty(7.6), tr(13.4), tr(10.2), tr(2.1), tr(2.1), 'F');
+
+      // Hốc khóa cài bên phải (Cutout)
+      doc.setFillColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      doc.roundedRect(tx(14.0), ty(10.5), tr(5.1), tr(4.4), tr(1.3), tr(1.3), 'F');
+
+      // Nút khóa cài nổi bật
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.roundedRect(tx(14.6), ty(11.15), tr(4.1), tr(3.1), tr(1.0), tr(1.0), 'F');
+
+      // Chấm khóa tròn
+      doc.setFillColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      doc.circle(tx(16.15), ty(12.7), tr(0.68), 'F');
+      break;
+    }
+
+    case 'Users': {
+      // Người phụ bên phải
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.circle(tx(15.6), ty(9.1), tr(2.05), 'F');
+      const rightBodyPts = buildArcPoints(
+        tx(15.6),
+        ty(16.7),
+        tr(3.35),
+        Math.PI,
+        Math.PI * 2,
+        14
+      );
+      drawVectorPolygon(doc, rightBodyPts, 'F', true);
+
+      // Viền tách nhẹ giữa 2 người
+      doc.setFillColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      doc.circle(tx(9.5), ty(8.6), tr(3.05), 'F');
+      const cutBodyPts = buildArcPoints(
+        tx(9.5),
+        ty(17.2),
+        tr(5.05),
+        Math.PI,
+        Math.PI * 2,
+        16
+      );
+      drawVectorPolygon(doc, cutBodyPts, 'F', true);
+
+      // Người chính bên trái
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.circle(tx(9.5), ty(8.6), tr(2.45), 'F');
+      const leftBodyPts = buildArcPoints(
+        tx(9.5),
+        ty(17.2),
+        tr(4.45),
+        Math.PI,
+        Math.PI * 2,
+        16
+      );
+      drawVectorPolygon(doc, leftBodyPts, 'F', true);
+      break;
+    }
+
+    case 'CheckSolid': {
+      doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.setLineWidth(Math.max(0.35, s * 2.55));
+      doc.line(tx(7.2), ty(12.3), tx(10.6), ty(15.7));
+      doc.line(tx(10.6), ty(15.7), tx(17.0), ty(8.8));
+      break;
+    }
+
+    case 'RefreshCw': {
+      doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.setLineWidth(Math.max(0.32, s * 2.3));
+      const arcPts = buildArcPoints(
+        tx(12.0),
+        ty(12.0),
+        tr(5.45),
+        0.38,
+        Math.PI * 1.76,
+        24
+      );
+      drawVectorPolygon(doc, arcPts, 'S', false);
+
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.triangle(
+        tx(16.9),
+        ty(5.6),
+        tx(17.8),
+        ty(10.4),
+        tx(13.1),
+        ty(9.3),
+        'F'
+      );
+      break;
+    }
+
+    case 'PieChartHeader': {
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      const mainSector: Array<[number, number]> = [
+        [tx(11.3), ty(12.7)],
+        ...buildArcPoints(
+          tx(11.3),
+          ty(12.7),
+          tr(7.1),
+          Math.PI * 0.02,
+          Math.PI * 1.48,
+          22
+        ),
+      ];
+      drawVectorPolygon(doc, mainSector, 'F', true);
+
+      const wedgeSector: Array<[number, number]> = [
+        [tx(12.7), ty(11.3)],
+        ...buildArcPoints(
+          tx(12.7),
+          ty(11.3),
+          tr(7.1),
+          -Math.PI * 0.48,
+          -Math.PI * 0.02,
+          12
+        ),
+      ];
+      drawVectorPolygon(doc, wedgeSector, 'F', true);
+      break;
+    }
+
+    case 'Plane': {
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      const planePoly: Array<[number, number]> = [
+        [tx(20.6), ty(3.4)],
+        [tx(19.3), ty(3.1)],
+        [tx(16.5), ty(4.6)],
+        [tx(13.0), ty(8.0)],
+        [tx(4.8), ty(6.2)],
+        [tx(3.5), ty(7.2)],
+        [tx(9.0), ty(12.0)],
+        [tx(7.0), ty(15.0)],
+        [tx(4.0), ty(15.0)],
+        [tx(3.0), ty(16.0)],
+        [tx(6.0), ty(18.0)],
+        [tx(8.0), ty(21.0)],
+        [tx(9.0), ty(20.0)],
+        [tx(9.0), ty(17.0)],
+        [tx(12.0), ty(15.0)],
+        [tx(16.8), ty(20.5)],
+        [tx(17.8), ty(19.2)],
+        [tx(16.0), ty(11.0)],
+        [tx(19.4), ty(7.5)],
+        [tx(20.9), ty(4.7)],
+      ];
+      drawVectorPolygon(doc, planePoly, 'F', true);
+      break;
+    }
+
+    case 'Utensils': {
+      // Nĩa bên trái (Fork)
+      doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.setLineWidth(Math.max(0.22, s * 1.55));
+      doc.line(tx(7.2), ty(5.2), tx(7.2), ty(10.0));
+      doc.line(tx(9.2), ty(5.2), tx(9.2), ty(10.0));
+      doc.line(tx(11.2), ty(5.2), tx(11.2), ty(10.0));
+
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.roundedRect(tx(6.5), ty(9.3), tr(5.4), tr(2.4), tr(1.0), tr(1.0), 'F');
+      doc.roundedRect(tx(8.2), ty(11.1), tr(2.0), tr(7.9), tr(0.85), tr(0.85), 'F');
+
+      // Dao bên phải (Knife)
+      const knifeBlade: Array<[number, number]> = [
+        [tx(16.5), ty(5.0)],
+        [tx(15.2), ty(5.3)],
+        [tx(13.9), ty(7.2)],
+        [tx(13.3), ty(9.8)],
+        [tx(13.3), ty(12.3)],
+        [tx(14.8), ty(12.8)],
+        [tx(16.5), ty(12.8)],
+      ];
+      drawVectorPolygon(doc, knifeBlade, 'F', true);
+      doc.roundedRect(tx(14.75), ty(12.0), tr(1.8), tr(7.0), tr(0.8), tr(0.8), 'F');
+      break;
+    }
+
+    case 'Hotel': {
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.roundedRect(tx(7.0), ty(5.0), tr(10.0), tr(13.5), tr(1.1), tr(1.1), 'F');
+      doc.rect(tx(5.6), ty(17.4), tr(12.8), tr(1.5), 'F');
+
+      doc.setFillColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      const winCoords: Array<[number, number]> = [
+        [8.8, 6.8],
+        [13.0, 6.8],
+        [8.8, 9.8],
+        [13.0, 9.8],
+        [8.8, 12.8],
+        [13.0, 12.8],
+      ];
+      winCoords.forEach(([wx, wy]) => {
+        doc.rect(tx(wx), ty(wy), tr(2.1), tr(1.8), 'F');
+      });
+      doc.roundedRect(tx(10.6), ty(15.4), tr(2.8), tr(3.2), tr(0.55), tr(0.55), 'F');
+      break;
+    }
+
+    case 'MoreDots': {
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      [7.2, 12.0, 16.8].forEach((cx) => {
+        doc.circle(tx(cx), ty(12.0), tr(1.55), 'F');
+      });
+      break;
+    }
+
+    case 'Car': {
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      // Mui xe hình thang cân
+      drawVectorPolygon(
+        doc,
+        [
+          [tx(7.4), ty(7.2)],
+          [tx(16.6), ty(7.2)],
+          [tx(18.4), ty(11.0)],
+          [tx(5.6), ty(11.0)],
+        ],
+        'F',
+        true
+      );
+      // Thân xe bo tròn
+      doc.roundedRect(tx(4.8), ty(10.5), tr(14.4), tr(5.2), tr(1.6), tr(1.6), 'F');
+      // 2 bánh xe
+      doc.roundedRect(tx(5.6), ty(14.8), tr(2.4), tr(2.8), tr(0.75), tr(0.75), 'F');
+      doc.roundedRect(tx(16.0), ty(14.8), tr(2.4), tr(2.8), tr(0.75), tr(0.75), 'F');
+
+      // Kính chắn gió (Cutout)
+      doc.setFillColor(cutRgb[0], cutRgb[1], cutRgb[2]);
+      drawVectorPolygon(
+        doc,
+        [
+          [tx(8.2), ty(8.2)],
+          [tx(15.8), ty(8.2)],
+          [tx(16.9), ty(10.5)],
+          [tx(7.1), ty(10.5)],
+        ],
+        'F',
+        true
+      );
+      // 2 đèn pha tròn
+      doc.circle(tx(7.4), ty(13.1), tr(1.1), 'F');
+      doc.circle(tx(16.6), ty(13.1), tr(1.1), 'F');
+      break;
+    }
+
+    case 'Calculator': {
+      doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.setLineWidth(Math.max(0.24, s * 1.9));
+      doc.roundedRect(tx(4.5), ty(2.5), tr(15.0), tr(19.0), tr(2.2), tr(2.2), 'S');
+
+      doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
+      doc.roundedRect(tx(7.0), ty(5.2), tr(10.0), tr(3.6), tr(0.85), tr(0.85), 'F');
+
+      const dots: Array<[number, number]> = [
+        [8.2, 12.2],
+        [12.0, 12.2],
+        [15.8, 12.2],
+        [8.2, 15.5],
+        [12.0, 15.5],
+        [15.8, 15.5],
+        [8.2, 18.6],
+        [12.0, 18.6],
+        [15.8, 18.6],
+      ];
+      dots.forEach(([dx, dy]) => {
+        doc.circle(tx(dx), ty(dy), tr(0.95), 'F');
+      });
+      break;
+    }
+
+    default: {
+      const innerSize = diameterMm * 0.58;
+      drawVectorStrokeIconGeometry(
+        doc,
+        kind,
+        centerX - innerSize / 2,
+        centerY - innerSize / 2,
+        innerSize,
+        fgRgb
+      );
+      break;
+    }
+  }
 }
 
-let cachedHeroBannerBgUrl: string | null = null;
-
 /**
- * Vẽ nền Hero Banner màu xanh Navy đậm kết hợp mảng hình học lượn sóng tối giản (Minimalist Flat Geometric Waves)
+ * Vẽ trực tiếp 100% Vector cho nền Hero Banner màu xanh Navy đậm kết hợp
+ * mảng hình học lượn sóng tối giản (Minimalist Flat Geometric Waves)
  */
 function drawAppendixHeroBannerBackground(
   doc: any,
@@ -1367,57 +1505,60 @@ function drawAppendixHeroBannerBackground(
   width: number,
   height: number
 ): void {
-  if (typeof document !== 'undefined') {
-    if (!cachedHeroBannerBgUrl) {
-      try {
-        const cw = 1400;
-        const ch = 152;
-        const canvas = document.createElement('canvas');
-        canvas.width = cw;
-        canvas.height = ch;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.beginPath();
-          ctx.roundRect(0, 0, cw, ch, 22);
-          ctx.clip();
-
-          // Nền xanh Navy chủ đạo
-          ctx.fillStyle = 'rgb(17, 36, 77)';
-          ctx.fillRect(0, 0, cw, ch);
-
-          // Mảng sóng hình học thứ nhất (bên phải)
-          ctx.fillStyle = 'rgb(22, 48, 102)';
-          ctx.beginPath();
-          ctx.moveTo(cw * 0.56, 0);
-          ctx.bezierCurveTo(cw * 0.68, ch * 0.25, cw * 0.75, ch * 0.85, cw * 0.89, ch);
-          ctx.lineTo(cw, ch);
-          ctx.lineTo(cw, 0);
-          ctx.closePath();
-          ctx.fill();
-
-          // Mảng sóng hình học thứ hai (góc phải)
-          ctx.fillStyle = 'rgb(28, 60, 126)';
-          ctx.beginPath();
-          ctx.moveTo(cw * 0.78, ch);
-          ctx.bezierCurveTo(cw * 0.84, ch * 0.55, cw * 0.91, ch * 0.22, cw * 0.97, 0);
-          ctx.lineTo(cw, 0);
-          ctx.lineTo(cw, ch);
-          ctx.closePath();
-          ctx.fill();
-
-          cachedHeroBannerBgUrl = canvas.toDataURL('image/png');
-        }
-      } catch {
-        cachedHeroBannerBgUrl = null;
-      }
-    }
-    if (cachedHeroBannerBgUrl) {
-      doc.addImage(cachedHeroBannerBgUrl, 'PNG', x, y, width, height);
-      return;
-    }
-  }
+  const r = 2.6;
+  // 1. Nền xanh Navy chủ đạo bo góc
   doc.setFillColor(17, 36, 77);
-  doc.roundedRect(x, y, width, height, 2.6, 2.6, 'F');
+  doc.roundedRect(x, y, width, height, r, r, 'F');
+
+  // 2. Mảng sóng hình học thứ nhất (bên phải, dùng đường cong Bezier vector gốc của jsPDF)
+  doc.setFillColor(22, 48, 102);
+  const w1StartX = x + width * 0.56;
+  const w1EndX = x + width - r;
+  doc.lines(
+    [
+      [
+        width * 0.12,
+        height * 0.25,
+        width * 0.19,
+        height * 0.85,
+        width * 0.33,
+        height,
+      ],
+      [w1EndX - (x + width * 0.89), 0],
+      [0, -height],
+    ],
+    w1StartX,
+    y,
+    [1, 1],
+    'F',
+    true
+  );
+  doc.roundedRect(x + width - r * 2.4, y, r * 2.4, height, r, r, 'F');
+
+  // 3. Mảng sóng hình học thứ hai (góc phải, dùng đường cong Bezier vector gốc của jsPDF)
+  doc.setFillColor(28, 60, 126);
+  const w2StartX = x + width * 0.78;
+  const w2TopX = x + width * 0.965;
+  doc.lines(
+    [
+      [
+        width * 0.06,
+        -height * 0.45,
+        width * 0.13,
+        -height * 0.78,
+        w2TopX - w2StartX,
+        -height,
+      ],
+      [x + width - r - w2TopX, 0],
+      [0, height],
+    ],
+    w2StartX,
+    y + height,
+    [1, 1],
+    'F',
+    true
+  );
+  doc.roundedRect(x + width - r * 2.1, y, r * 2.1, height, r, r, 'F');
 }
 
 function drawCardSolidHeader(
@@ -2427,16 +2568,18 @@ export async function exportExpenseReportPdf(report: ExpenseReportData): Promise
     format: 'a4',
   });
 
-  const fonts = await ensureRobotoFontsLoaded();
+  const fonts = await ensurePlusJakartaFontsLoaded();
   let activeFont = 'helvetica';
 
   if (fonts) {
-    doc.addFileToVFS('Roboto-Regular.ttf', fonts.regular);
-    doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
-    doc.addFileToVFS('Roboto-Medium.ttf', fonts.medium);
-    doc.addFont('Roboto-Medium.ttf', 'Roboto', 'bold');
-    doc.setFont('Roboto', 'normal');
-    activeFont = 'Roboto';
+    doc.addFileToVFS('PlusJakartaSans-Medium.ttf', fonts.regular);
+    doc.addFont('PlusJakartaSans-Medium.ttf', 'PlusJakartaSans', 'normal');
+    doc.addFont('PlusJakartaSans-Medium.ttf', 'PlusJakartaSans', 'italic');
+    doc.addFileToVFS('PlusJakartaSans-Bold.ttf', fonts.bold);
+    doc.addFont('PlusJakartaSans-Bold.ttf', 'PlusJakartaSans', 'bold');
+    doc.addFont('PlusJakartaSans-Bold.ttf', 'PlusJakartaSans', 'bolditalic');
+    doc.setFont('PlusJakartaSans', 'normal');
+    activeFont = 'PlusJakartaSans';
   }
 
   const autoTableFn = (doc as any).autoTable || (win as any).jspdf?.autoTable;

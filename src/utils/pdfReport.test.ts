@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildExpenseReportData,
+  buildReportFileName,
   computeAppendixGridMetrics,
+  formatReportLocationSegment,
   formatSpentAtReportVN,
   sanitizeFileNameSegment,
   shortenCategoryLabelForTable,
@@ -207,6 +209,7 @@ test('buildExpenseReportData - xuất toàn bộ chuyến đi (all) có đủ T�
   assert.equal(m1App.paidRows.length, 1); // trả exp_1
   assert.equal(m1App.participatedRows.length, 3); // thụ hưởng exp_1, exp_2 và nhận chuyển exp_3
   assert.equal(m1App.byCategory.length, 2); // Ăn uống (150k) + Di chuyển (150k)
+  assert.match(report.suggestedFileName, /^report-Đà-Lạt-Lâm-Đồng-\d{8}-\d{4}\.pdf$/);
 });
 
 test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo Vy) chỉ tạo phụ lục của thành viên đó', () => {
@@ -229,12 +232,21 @@ test('buildExpenseReportData - lọc theo thành viên cụ thể (m3 - Thảo V
   assert.equal(report.memberAppendices.length, 1);
   assert.equal(report.memberAppendices[0].memberName, 'Thảo Vy');
   assert.equal(report.memberAppendices[0].finalSettlementActions.length, 2);
-  assert.equal(report.suggestedFileName, 'bao-cao-da-lat-mua-suong-2026-thao-vy.pdf');
+  assert.match(report.suggestedFileName, /^report-Đà-Lạt-Lâm-Đồng-\d{8}-\d{4}\.pdf$/);
 });
 
-test('formatSpentAtReportVN, sanitizeFileNameSegment & shortenCategoryLabelForTable hoạt động chính xác', () => {
+test('formatSpentAtReportVN, buildReportFileName, formatReportLocationSegment & shortenCategoryLabelForTable hoạt động chính xác', () => {
   assert.equal(formatSpentAtReportVN('2026-10-24 19:30'), '24/10/2026 19:30');
   assert.equal(sanitizeFileNameSegment('Đà Lạt 2026!'), 'da-lat-2026');
+  assert.equal(formatReportLocationSegment('Hà Nội', 'Hội nghị YHDP'), 'Hà-Nội');
+  assert.equal(
+    buildReportFileName('Hà Nội', 'Hội nghị YHDP 2026', '2026-11-03 15:15:00'),
+    'report-Hà-Nội-20261103-1515.pdf'
+  );
+  assert.equal(
+    buildReportFileName('', 'Đà Lạt 2026', '2026-11-03 09:05'),
+    'report-Đà-Lạt-2026-20261103-0905.pdf'
+  );
   assert.equal(shortenCategoryLabelForTable('Vé đi/về (máy bay/tàu xe)'), 'Vé đi/về');
   assert.equal(shortenCategoryLabelForTable('Lưu trú (KS/homestay)'), 'Lưu trú');
   assert.equal(shortenCategoryLabelForTable('Di chuyển tại chỗ'), 'Di chuyển');

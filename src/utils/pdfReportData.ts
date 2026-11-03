@@ -141,6 +141,37 @@ export function sanitizeFileNameSegment(input: string): string {
     .toLowerCase();
 }
 
+/**
+ * Chuẩn hóa tên địa điểm để đặt tên file báo cáo theo mẫu `report-[địa-điểm]-[yyyymmdd-HHmm].pdf`
+ * Ví dụ: "Hà Nội" -> "Hà-Nội", "Đà Lạt, Lâm Đồng" -> "Đà-Lạt-Lâm-Đồng"
+ */
+export function formatReportLocationSegment(location: string, fallbackTripName?: string): string {
+  const raw = (location || '').trim() || (fallbackTripName || '').trim() || 'Chuyen-di';
+  const cleaned = raw
+    .replace(/[/\\?%*:|"<>.,;•|()[\]{}!@#$^&+=~`]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return cleaned || 'Chuyen-di';
+}
+
+/**
+ * Tạo tên file báo cáo đơn giản: `report-[địa-điểm]-[yyyymmdd-HHmm].pdf`
+ * Ví dụ: `report-Hà-Nội-20261103-1515.pdf`
+ */
+export function buildReportFileName(
+  location: string,
+  fallbackTripName?: string,
+  nowGMT7Str?: string
+): string {
+  const locSegment = formatReportLocationSegment(location, fallbackTripName);
+  const tsSource = (nowGMT7Str || '').trim();
+  const m = tsSource.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+  const timestampSegment = m ? `${m[1]}${m[2]}${m[3]}-${m[4]}${m[5]}` : '00000000-0000';
+  return `report-${locSegment}-${timestampSegment}.pdf`;
+}
+
 export function shortenCategoryLabelForTable(label: string): string {
   if (!label) return 'Khác';
   const withoutParens = label.replace(/\s*\([^)]*\)/g, '').trim();
@@ -540,12 +571,7 @@ export function buildExpenseReportData(params: {
     };
   }
 
-  const tripSlug = sanitizeFileNameSegment(config.tripName || config.tripId || 'chuyen-di');
-  const scopeSlug =
-    normalizedFilter === 'all'
-      ? 'all'
-      : sanitizeFileNameSegment(memberSummary?.memberName || normalizedFilter);
-
+  const nowGMT7 = getNowGMT7(false);
   const dateRangeLabel =
     config.startDate && config.endDate
       ? `${formatShortDateVN(config.startDate)} - ${formatShortDateVN(config.endDate)}`
@@ -558,7 +584,7 @@ export function buildExpenseReportData(params: {
     tripName: config.tripName || 'Chuyến đi',
     location: config.location || '',
     dateRangeLabel,
-    generatedAt: formatSpentAtReportVN(getNowGMT7(false)),
+    generatedAt: formatSpentAtReportVN(nowGMT7),
     filterMemberId: normalizedFilter,
     scopeLabel,
     rows,
@@ -581,6 +607,6 @@ export function buildExpenseReportData(params: {
       pairwiseDebts,
     },
     memberAppendices,
-    suggestedFileName: `bao-cao-${tripSlug}-${scopeSlug}.pdf`,
+    suggestedFileName: buildReportFileName(config.location, config.tripName, nowGMT7),
   };
 }

@@ -6,6 +6,19 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
+## [v20261103_1550] - 2026-11-03
+
+### Changed
+- **Chuyển đổi 100% Icon & Đồ họa PDF sang Vector Gốc (`src/utils/pdfReport.ts`):**
+  - Thay thế toàn bộ cơ chế vẽ icon qua thẻ `<canvas>` (`doc.addImage(..., 'PNG')`) bằng các lệnh vẽ vector gốc của PDF (`doc.roundedRect`, `doc.rect`, `doc.circle`, `doc.triangle`, `doc.line`, `doc.lines`) cho cả bộ icon nét mảnh (`drawVectorStrokeIconGeometry`), bộ icon phẳng Minimalist Flat-Design (`drawFlatAppendixIcon`) và nền sóng hình học của Hero Banner (`drawAppendixHeroBannerBackground`).
+  - Đảm bảo khi người dùng phóng to báo cáo PDF lên 400%–1600% trên mọi trình đọc PDF, tất cả icon, biểu đồ và chữ đều giữ nguyên độ sắc nét tuyệt đối, không bị vỡ hạt (pixelated).
+- **Đồng nhất Font chữ Báo cáo PDF với Web App (`Plus Jakarta Sans`):**
+  - Tải và nhúng trực tiếp bộ font TrueType **`Plus Jakarta Sans`** (`Medium 500` cho kiểu chữ thường và `Bold 700` cho kiểu chữ đậm, hỗ trợ đầy đủ dấu tiếng Việt Unicode) vào tệp PDF, giúp kiểu dáng chữ và độ đậm nhạt trên PDF đồng nhất hoàn toàn với giao diện Web App.
+- **Đơn giản hóa quy tắc đặt tên file báo cáo PDF (`src/utils/pdfReportData.ts`):**
+  - Đổi định dạng tên file xuất ra thành `report-[địa-điểm]-[yyyymmdd-HHmm].pdf` (ví dụ: `report-Hà-Nội-20261103-1515.pdf`), lấy giá trị `[địa-điểm]` từ trường Địa điểm (`config.location`) do Admin thiết lập trong thẻ Cài đặt.
+
+---
+
 ## [v20261102_1052] - 2026-11-02
 
 ### Changed
