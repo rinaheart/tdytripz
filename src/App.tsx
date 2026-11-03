@@ -1214,6 +1214,7 @@ export default function App() {
               config={appState.config}
               members={appState.members}
               categories={appState.categories}
+              expenses={appState.expenses}
               currentUserId={currentUserId || appState.members[0]?.id || 'mem_duy'}
               isAdmin={isAdmin}
               onSave={handleSaveExpenseRecord}

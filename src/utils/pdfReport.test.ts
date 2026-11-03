@@ -268,6 +268,12 @@ test('computeAppendixGridMetrics - căn chỉnh thẳng hàng tuyệt đối gi�
   const kpi4RightEdge = m.kpiCardX[3] + m.kpiColWidth;
   const rightColRightEdge = m.rightColX + m.mainColWidth;
   assert.ok(Math.abs(kpi4RightEdge - rightColRightEdge) < 1e-9);
+
+  // Lưới 3 ô KPI phẳng (Phụ lục cá nhân): cạnh trái KPI #1 trùng Cột trái, cạnh phải KPI #3 trùng Cột phải
+  assert.equal(m.kpi3CardX[0], m.leftColX);
+  const kpi3LastRightEdge = m.kpi3CardX[2] + m.kpi3ColWidth;
+  assert.ok(Math.abs(kpi3LastRightEdge - rightColRightEdge) < 1e-9);
 });
+
 
 

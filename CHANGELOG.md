@@ -6,6 +6,21 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
+## [v20261103_2055] - 2026-11-03
+
+### Added
+- **Kiểm tra cảnh báo trùng khoản chi trong cùng ngày (`src/utils/format.ts`, `src/components/ExpenseFormModal.tsx`):**
+  - Bổ sung hàm `findDuplicateExpenseOnSameDay` kiểm tra xem trước khi lưu khoản chi mới có khoản chi nào chưa xóa mang cùng **Tiêu đề** (không phân biệt hoa/thường và khoảng trắng thừa) và cùng **Số tiền** trong cùng ngày (`spentAt` hoặc `createdAt`) hay không.
+  - Hiển thị khung cảnh báo xác nhận trực quan ngay trên biểu mẫu để người dùng kiểm tra và bấm **Xác nhận lưu** nếu thực sự muốn ghi nhận khoản chi thứ hai trùng thông tin trong ngày.
+
+### Changed
+- **Đồng bộ Thiết kế Phẳng (Minimalist Flat-Design) & Ký hiệu tiền tệ `₫` trên Báo cáo PDF (`src/utils/pdfReport.ts`):**
+  - Cập nhật thẻ bên trái của Phụ lục cá nhân thành nhãn chính xác **`Số tiền cần chuyển`** hoặc **`Số tiền cần nhận`**, đồng bộ cấu trúc khung phẳng với thẻ bên phải **`Chi phí theo Hạng mục ([username])`**: thẻ trái có viền đỏ nhạt + header nền đỏ đậm, thẻ phải có viền xanh nhạt + header nền xanh đậm, lược bỏ dải viền dọc lệch bên trái.
+  - Chuyển đổi toàn bộ đơn vị tiền tệ trong báo cáo PDF sang ký hiệu **`₫`** (`U+20AB`).
+  - Áp dụng thống nhất phong cách **Hero Header phẳng** và **các thẻ KPI phẳng** (nền pastel dịu, viền mảnh đồng màu, icon vector tròn lớn bên trái, nội dung chữ căn trái bên phải) cho cả **Trang 1 (Tổng quan)** và **Phụ lục cá nhân (3 thẻ KPI: Đã chi, Phải chịu, Số dư cuối)**.
+
+---
+
 ## [v20261103_1550] - 2026-11-03
 
 ### Changed

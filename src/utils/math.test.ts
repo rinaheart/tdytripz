@@ -9,6 +9,7 @@ import {
   validateExactSplits,
 } from './math';
 import {
+  findDuplicateExpenseOnSameDay,
   formatCompactVND,
   formatVND,
   normalizeSearchText,
@@ -206,3 +207,88 @@ test('mergeRemoteAndLocalExpenses - giữ nguyên bản ghi đang nằm trong h�
   assert.equal(merged[0].syncStatus, 'pending');
   assert.equal(merged[1].id, 'exp_remote_1');
 });
+
+test('findDuplicateExpenseOnSameDay - phát hiện khoản chi trùng Tiêu đề và Số tiền trong cùng ngày', () => {
+  const existingExpenses: ExpenseRecord[] = [
+    {
+      id: 'exp_1',
+      rev: 1,
+      type: 'expense',
+      title: 'Bánh mì Phượng Hội An',
+      amount: 120000,
+      payer: 'm1',
+      splits: { m1: 60000, m2: 60000 },
+      splitMode: 'equal',
+      categoryId: 'cat_food',
+      spentAt: '2026-11-03 08:30',
+      createdBy: 'm1',
+      createdAt: '2026-11-03 08:31:00',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-03 08:31:00',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: 'exp_deleted',
+      rev: 2,
+      type: 'expense',
+      title: 'Cà phê muối',
+      amount: 90000,
+      payer: 'm2',
+      splits: { m1: 45000, m2: 45000 },
+      splitMode: 'equal',
+      categoryId: 'cat_food',
+      spentAt: '2026-11-03 09:00',
+      createdBy: 'm2',
+      createdAt: '2026-11-03 09:00:00',
+      updatedBy: 'm2',
+      updatedAt: '2026-11-03 09:05:00',
+      deleted: true,
+      note: '',
+    },
+  ];
+
+  // Trùng tiêu đề (không phân biệt hoa thường/khoảng trắng thừa) + cùng số tiền + cùng ngày -> phát hiện
+  const dup = findDuplicateExpenseOnSameDay(existingExpenses, {
+    title: '  bánh mì phượng hội an ',
+    amount: 120000,
+    spentAt: '2026-11-03 19:45',
+  });
+  assert.ok(dup);
+  assert.equal(dup.id, 'exp_1');
+
+  // Cùng tiêu đề + cùng số tiền nhưng khác ngày -> không trùng
+  const diffDay = findDuplicateExpenseOnSameDay(existingExpenses, {
+    title: 'Bánh mì Phượng Hội An',
+    amount: 120000,
+    spentAt: '2026-11-04 08:30',
+  });
+  assert.equal(diffDay, null);
+
+  // Cùng tiêu đề + cùng ngày nhưng khác số tiền -> không trùng
+  const diffAmount = findDuplicateExpenseOnSameDay(existingExpenses, {
+    title: 'Bánh mì Phượng Hội An',
+    amount: 150000,
+    spentAt: '2026-11-03 10:00',
+  });
+  assert.equal(diffAmount, null);
+
+  // Bản ghi đã xóa (deleted: true) -> bỏ qua
+  const deletedMatch = findDuplicateExpenseOnSameDay(existingExpenses, {
+    title: 'Cà phê muối',
+    amount: 90000,
+    spentAt: '2026-11-03 10:00',
+  });
+  assert.equal(deletedMatch, null);
+
+  // Khi đang sửa chính bản ghi đó (id trùng) -> bỏ qua
+  const selfEdit = findDuplicateExpenseOnSameDay(existingExpenses, {
+    id: 'exp_1',
+    title: 'Bánh mì Phượng Hội An',
+    amount: 120000,
+    spentAt: '2026-11-03 08:30',
+  });
+  assert.equal(selfEdit, null);
+});
+
+

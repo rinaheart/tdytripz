@@ -25,6 +25,8 @@ import type {
 } from '../types';
 import {
   checkSpentAtRange,
+  findDuplicateExpenseOnSameDay,
+  formatShortDateVN,
   formatVND,
   fromDatetimeLocalValue,
   generateUUID,
@@ -43,6 +45,7 @@ interface ExpenseFormModalProps {
   config: TripConfig;
   members: Member[];
   categories: Category[];
+  expenses?: ExpenseRecord[];
   currentUserId: string;
   isAdmin: boolean;
   onSave: (record: ExpenseRecord, baseRev: number) => void;
@@ -56,6 +59,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   config,
   members,
   categories,
+  expenses = [],
   currentUserId,
   isAdmin,
   onSave,
@@ -94,6 +98,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   const [exactMap, setExactMap] = useState<Record<string, number>>({});
 
   const [pendingRangeConfirm, setPendingRangeConfirm] = useState<boolean>(false);
+  const [pendingDuplicateRecord, setPendingDuplicateRecord] = useState<ExpenseRecord | null>(null);
   const [confirmDeleteStep, setConfirmDeleteStep] = useState<boolean>(false);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [formError, setFormError] = useState<string>('');
@@ -112,6 +117,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     if (!isOpen) return;
     setFormError('');
     setPendingRangeConfirm(false);
+    setPendingDuplicateRecord(null);
     setConfirmDeleteStep(false);
     setIsSubmitting(false);
 
@@ -309,6 +315,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   const handleAmountChange = (val: string) => {
     const clean = val.replace(/\D/g, '').replace(/^0+/, '').slice(0, 12);
     setRawDigits(clean);
+    setPendingDuplicateRecord(null);
     if (clean.length >= 1 && clean.length <= 3) {
       const defaultMult = config.suggestMultipliers?.[0] || 1000;
       setSelectedMultiplier(defaultMult);
@@ -320,6 +327,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
   const handleApplyChip = (chipValue: number) => {
     setRawDigits(String(chipValue));
     setSelectedMultiplier(1);
+    setPendingDuplicateRecord(null);
   };
 
   const computedSplits = useMemo<Record<string, number>>(() => {
@@ -444,6 +452,20 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       }
       if (splitMode === 'exact' && !exactValidation.valid) {
         setFormError('Tổng tiền từng người chưa khớp tổng chi.');
+        return;
+      }
+    }
+
+    if (!editingRecord) {
+      const duplicateMatch = findDuplicateExpenseOnSameDay(expenses, {
+        id: recordId,
+        title: finalTitle,
+        amount: effectiveAmount,
+        spentAt,
+        createdAt: getNowGMT7(false),
+      });
+      if (duplicateMatch && !pendingDuplicateRecord) {
+        setPendingDuplicateRecord(duplicateMatch);
         return;
       }
     }
@@ -647,7 +669,10 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   maxLength={120}
                   autoComplete="off"
                   value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  onChange={(e) => {
+                    setTitle(e.target.value);
+                    setPendingDuplicateRecord(null);
+                  }}
                   placeholder="VD: Ăn sáng, Taxi, Vé tham quan…"
                   className="w-full min-h-[44px] px-3.5 py-2 rounded-sm border border-slate-300 focus:border-brand text-sm font-medium text-slate-900"
                 />
@@ -810,6 +835,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   onClick={() => {
                     setSpentAt(getYesterdayGMT7(spentAt));
                     setPendingRangeConfirm(false);
+                    setPendingDuplicateRecord(null);
                   }}
                   className="min-h-[34px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 transition-colors cursor-pointer"
                 >
@@ -820,6 +846,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   onClick={() => {
                     setSpentAt(getNowGMT7(false));
                     setPendingRangeConfirm(false);
+                    setPendingDuplicateRecord(null);
                   }}
                   className="min-h-[34px] px-2.5 py-1 rounded-sm bg-slate-100 hover:bg-slate-200 text-xs font-semibold text-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
                 >
@@ -836,6 +863,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               onChange={(e) => {
                 setSpentAt(fromDatetimeLocalValue(e.target.value));
                 setPendingRangeConfirm(false);
+                setPendingDuplicateRecord(null);
               }}
               className="w-full min-h-[42px] px-3 py-1.5 rounded-sm border border-slate-300 bg-white text-xs sm:text-sm font-mono text-slate-900"
             />
@@ -1066,6 +1094,25 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
             />
           </div>
 
+          {pendingDuplicateRecord && (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="p-3 rounded-xl bg-amber-50 border border-amber-300 space-y-1"
+            >
+              <div className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
+                <AlertCircle aria-hidden="true" className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Cảnh báo trùng khoản chi trong cùng ngày — Bạn vẫn muốn lưu?</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed">
+                Đã có khoản <strong>&ldquo;{pendingDuplicateRecord.title}&rdquo;</strong> với cùng số tiền{' '}
+                <strong className="font-mono">{formatVND(pendingDuplicateRecord.amount)}</strong> trong ngày{' '}
+                <strong>{formatShortDateVN((pendingDuplicateRecord.spentAt || spentAt).slice(0, 10))}</strong>. Bấm{' '}
+                <strong>Xác nhận lưu</strong> nếu đây là khoản chi mới tách biệt.
+              </p>
+            </div>
+          )}
+
           {pendingRangeConfirm && (
             <div className="p-3 rounded-md bg-amber-50 border border-amber-300 space-y-1">
               <div className="text-xs font-bold text-amber-900">
@@ -1124,12 +1171,12 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
               className={`flex-1 min-h-[46px] px-5 rounded-sm font-bold text-sm text-white shadow-sm transition-colors ${
                 isSubmitting || (recordType === 'expense' && splitMode === 'exact' && !exactValidation.valid)
                   ? 'bg-slate-300 cursor-not-allowed'
-                  : pendingRangeConfirm
+                  : pendingDuplicateRecord || pendingRangeConfirm
                   ? 'bg-amber-600 hover:bg-amber-700'
                   : 'bg-brand hover:bg-brand-hover'
               }`}
             >
-              {pendingRangeConfirm
+              {pendingDuplicateRecord || pendingRangeConfirm
                 ? 'Xác nhận lưu'
                 : editingRecord?.deleted
                 ? 'Khôi phục & Lưu'

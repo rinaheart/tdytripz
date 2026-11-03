@@ -324,3 +324,64 @@ export function generateUUID(): string {
   });
 }
 
+/**
+ * Kiểm tra xem khoản chi mới có bị trùng 'Số tiền' và 'Tiêu đề' với một khoản chi khác
+ * trong cùng ngày (theo ngày chi tiêu spentAt hoặc ngày tạo createdAt) hay không.
+ */
+export function findDuplicateExpenseOnSameDay<
+  T extends {
+    id: string;
+    title: string;
+    amount: number;
+    spentAt: string;
+    createdAt?: string;
+    deleted?: boolean;
+  }
+>(
+  expenses: T[],
+  candidate: {
+    id?: string;
+    title: string;
+    amount: number;
+    spentAt: string;
+    createdAt?: string;
+  }
+): T | null {
+  const normCandidateTitle = (candidate.title || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toLowerCase();
+  const candidateAmount = Math.round(candidate.amount || 0);
+  if (!normCandidateTitle || candidateAmount <= 0) return null;
+
+  const candSpentDay = (candidate.spentAt || '').trim().slice(0, 10);
+  const candCreatedDay = (candidate.createdAt || '').trim().slice(0, 10);
+
+  for (const exp of expenses) {
+    if (!exp || exp.deleted) continue;
+    if (candidate.id && exp.id === candidate.id) continue;
+    if (Math.round(exp.amount || 0) !== candidateAmount) continue;
+
+    const normExpTitle = (exp.title || '')
+      .trim()
+      .replace(/\s+/g, ' ')
+      .toLowerCase();
+    if (normExpTitle !== normCandidateTitle) continue;
+
+    const expSpentDay = (exp.spentAt || '').trim().slice(0, 10);
+    const expCreatedDay = (exp.createdAt || '').trim().slice(0, 10);
+
+    const sameSpentDay = Boolean(candSpentDay && expSpentDay && candSpentDay === expSpentDay);
+    const sameCreatedDay = Boolean(
+      candCreatedDay && expCreatedDay && candCreatedDay === expCreatedDay
+    );
+
+    if (sameSpentDay || sameCreatedDay) {
+      return exp;
+    }
+  }
+
+  return null;
+}
+
+
