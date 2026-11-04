@@ -19,6 +19,7 @@ export interface ExpenseReportRow {
   title: string;
   payerId: string;
   payerName: string;
+  payerAvatarColor: string;
   amount: number;
   amountFormatted: string;
   memberShare: number | null;
@@ -43,6 +44,7 @@ export interface MemberReportSummary {
 export interface ReportCategoryBreakdown {
   categoryId: string;
   categoryName: string;
+  fullCategoryName: string;
   categoryIcon: string;
   amount: number;
   count: number;
@@ -65,7 +67,9 @@ export interface EnrichedMemberBalance extends MemberBalance {
 
 export interface EnrichedDebtTransaction extends DebtTransaction {
   fromMemberName: string;
+  fromAvatarColor: string;
   toMemberName: string;
+  toAvatarColor: string;
   toBankInfo: string;
 }
 
@@ -332,7 +336,10 @@ export function buildExpenseReportData(params: {
   let fullExpenseCount = 0;
   let fullTransferCount = 0;
 
-  const catAgg = new Map<string, { name: string; icon: string; amount: number; count: number }>();
+  const catAgg = new Map<
+    string,
+    { name: string; fullName: string; icon: string; amount: number; count: number }
+  >();
   const dayAgg = new Map<string, { label: string; amount: number; count: number }>();
 
   for (const rec of allActiveRecords) {
@@ -346,9 +353,16 @@ export function buildExpenseReportData(params: {
 
       const catId = rec.categoryId || 'cat_other';
       const catObj = categoryMap.get(catId);
-      const catName = shortenCategoryLabelForTable(catObj?.name || 'Khác');
+      const rawFullName = (catObj?.name || 'Khác').trim();
+      const catName = shortenCategoryLabelForTable(rawFullName);
       const catIcon = resolveCategoryIconName(catObj, catName);
-      const curCat = catAgg.get(catId) || { name: catName, icon: catIcon, amount: 0, count: 0 };
+      const curCat = catAgg.get(catId) || {
+        name: catName,
+        fullName: rawFullName,
+        icon: catIcon,
+        amount: 0,
+        count: 0,
+      };
       curCat.amount += effAmount;
       curCat.count += 1;
       catAgg.set(catId, curCat);
@@ -369,6 +383,7 @@ export function buildExpenseReportData(params: {
     .map(([categoryId, item]) => ({
       categoryId,
       categoryName: item.name,
+      fullCategoryName: item.fullName,
       categoryIcon: item.icon,
       amount: item.amount,
       count: item.count,
@@ -409,7 +424,9 @@ export function buildExpenseReportData(params: {
       return {
         ...d,
         fromMemberName: fromM?.name || d.fromMemberId,
+        fromAvatarColor: fromM?.avatarColor || '#be123c',
         toMemberName: toM?.name || d.toMemberId,
+        toAvatarColor: toM?.avatarColor || '#0f766e',
         toBankInfo: formatMemberBankInfo(toM),
       };
     });
@@ -423,7 +440,9 @@ export function buildExpenseReportData(params: {
     targetMemberId: string | null
   ): ExpenseReportRow => {
     const cleanAmount = getEffectiveRecordAmount(e);
-    const payerName = memberMap.get(e.payer)?.name || e.payer;
+    const payerMember = memberMap.get(e.payer);
+    const payerName = payerMember?.name || e.payer;
+    const payerAvatarColor = payerMember?.avatarColor || '#0f766e';
     const catObj = categoryMap.get(e.categoryId);
     const rawCatName = catObj?.name || 'Khác';
     const typeLabel = e.type === 'transfer' ? 'Chuyển trả' : shortenCategoryLabelForTable(rawCatName);
@@ -439,6 +458,7 @@ export function buildExpenseReportData(params: {
       title: e.title || (e.type === 'transfer' ? 'Chuyển khoản quyết toán' : 'Khoản chi'),
       payerId: e.payer,
       payerName,
+      payerAvatarColor,
       amount: cleanAmount,
       amountFormatted: formatVND(cleanAmount, false),
       memberShare,
@@ -494,7 +514,10 @@ export function buildExpenseReportData(params: {
       .filter((e) => Math.round(e.splits?.[m.id] || 0) > 0)
       .map((e) => toReportRow(e, m.id));
 
-    const personalCatMap = new Map<string, { name: string; icon: string; amount: number; count: number }>();
+    const personalCatMap = new Map<
+      string,
+      { name: string; fullName: string; icon: string; amount: number; count: number }
+    >();
     let personalTotalOwed = 0;
 
     for (const e of allActiveRecords) {
@@ -504,9 +527,16 @@ export function buildExpenseReportData(params: {
       personalTotalOwed += myShare;
       const catId = e.categoryId || 'cat_other';
       const catObj = categoryMap.get(catId);
-      const catName = shortenCategoryLabelForTable(catObj?.name || 'Khác');
+      const rawFullName = (catObj?.name || 'Khác').trim();
+      const catName = shortenCategoryLabelForTable(rawFullName);
       const catIcon = resolveCategoryIconName(catObj, catName);
-      const cur = personalCatMap.get(catId) || { name: catName, icon: catIcon, amount: 0, count: 0 };
+      const cur = personalCatMap.get(catId) || {
+        name: catName,
+        fullName: rawFullName,
+        icon: catIcon,
+        amount: 0,
+        count: 0,
+      };
       cur.amount += myShare;
       cur.count += 1;
       personalCatMap.set(catId, cur);
@@ -516,6 +546,7 @@ export function buildExpenseReportData(params: {
       .map(([categoryId, item]) => ({
         categoryId,
         categoryName: item.name,
+        fullCategoryName: item.fullName,
         categoryIcon: item.icon,
         amount: item.amount,
         count: item.count,

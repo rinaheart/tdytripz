@@ -61,7 +61,7 @@
 │   │   ├── pdfReportData.ts       # Chuẩn bị dữ liệu báo cáo PDF
 │   │   └── pdfReport.test.ts      # Unit tests dữ liệu báo cáo PDF
 │   ├── types.ts                   # Định nghĩa TypeScript interfaces
-│   ├── version.ts                 # Nơi duy nhất khai báo APP_VERSION: v[yyyymmdd_HHmm] (GMT+7)
+│   ├── version.ts                 # Nơi duy nhất khai báo APP_VERSION: v[yyyy.mm.dd_HH.mm] (GMT+7)
 │   └── App.tsx                    # Điều phối trạng thái, ChunkErrorBoundary & luồng tương tác chính
 └── vite.config.ts                 # Cấu hình Vite + Plugin tự động đồng bộ version & Precache SW
 ```
@@ -92,7 +92,7 @@ npm run build
 ```
 
 > **Quy tắc định dạng Version hệ thống:**
-> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyymmdd_HHmm]`** theo múi giờ **GMT+7** (ví dụ: `v20261102_0825`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
+> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyy.mm.dd_HH.mm]`** theo múi giờ **GMT+7** (ví dụ: `v2026.11.04_09.15`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
 
 ---
 

@@ -9,6 +9,11 @@ import {
   sanitizeFileNameSegment,
   shortenCategoryLabelForTable,
 } from './pdfReport';
+import {
+  LUCIDE_ICON_NODES,
+  parseSvgPathToSubpaths,
+  resolveLucideIconKey,
+} from './pdfLucideIcons';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
 
 const mockConfig: TripConfig = {
@@ -274,6 +279,53 @@ test('computeAppendixGridMetrics - căn chỉnh thẳng hàng tuyệt đối gi�
   const kpi3LastRightEdge = m.kpi3CardX[2] + m.kpi3ColWidth;
   assert.ok(Math.abs(kpi3LastRightEdge - rightColRightEdge) < 1e-9);
 });
+
+test('pdfLucideIcons & dữ liệu Avatar/Danh mục đồng bộ Web App', () => {
+  // Kiểm tra mọi icon Lucide trong registry đều parse được subpath hợp lệ
+  for (const [iconKey, elements] of Object.entries(LUCIDE_ICON_NODES)) {
+    assert.ok(elements.length > 0, `Icon ${iconKey} phải có ít nhất 1 phần tử SVG`);
+    for (const [tag, attrs] of elements) {
+      if (tag === 'path') {
+        const subs = parseSvgPathToSubpaths(attrs.d);
+        assert.ok(subs.length > 0, `Path của ${iconKey} phải sinh ít nhất 1 subpath`);
+      }
+    }
+  }
+
+  assert.equal(resolveLucideIconKey('MoreDots'), 'Ellipsis');
+  assert.equal(resolveLucideIconKey('PieChartHeader'), 'PieChart');
+
+  const report = buildExpenseReportData({
+    config: mockConfig,
+    members: mockMembers,
+    categories: [
+      {
+        id: 'cat_flight',
+        name: 'Vé đi/về (máy bay/tàu xe)',
+        icon: 'Plane',
+        order: 1,
+        hidden: false,
+      },
+      ...mockCategories,
+    ],
+    expenses: [
+      {
+        ...mockExpenses[0],
+        categoryId: 'cat_flight',
+      },
+    ],
+    filterMemberId: 'all',
+  });
+
+  // Giữ nguyên tên đầy đủ ở fullCategoryName để hiển thị giống Web App ("Vé đi/về (máy bay/tàu xe)")
+  assert.equal(report.overview.byCategory[0].fullCategoryName, 'Vé đi/về (máy bay/tàu xe)');
+  assert.equal(report.overview.byCategory[0].categoryName, 'Vé đi/về');
+  // Mọi dòng chi tiết và giao dịch quyết toán đều có màu Avatar thành viên
+  assert.equal(report.rows[0].payerAvatarColor, '#0f766e');
+  assert.ok(report.settlement.simplifiedDebts[0].fromAvatarColor);
+  assert.ok(report.settlement.simplifiedDebts[0].toAvatarColor);
+});
+
 
 
 

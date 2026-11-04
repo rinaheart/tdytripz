@@ -2,11 +2,24 @@
 
 Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi nhận tại tệp này.
 
-> **Quy ước định dạng phiên bản hệ thống:** `v[yyyymmdd_HHmm]` theo múi giờ **GMT+7**.
+> **Quy ước định dạng phiên bản hệ thống:** `v[yyyy.mm.dd_HH.mm]` theo múi giờ **GMT+7**.
 
 ---
 
-## [v20261103_2055] - 2026-11-03
+## [v2026.11.04_09.15] - 2026-11-04
+
+### Changed
+- **Chuyển đổi 100% Icon Báo cáo PDF sang bộ Lucide (`src/utils/pdfLucideIcons.ts`, `src/utils/pdfReport.ts`):**
+  - Xây dựng bộ thông dịch SVG Path chuẩn `24x24` (`parseSvgPathToSubpaths` & `drawLucideIcon`) sử dụng trực tiếp dữ liệu hình học gốc của `lucide-react`, hỗ trợ linh hoạt nhiều biến thể trình bày (`duotone-circle`, `rounded-badge`, `solid-badge`, `plain`) để vừa nổi bật vừa đồng bộ tuyệt đối với Web App.
+- **Đồng nhất Quy tắc trình bày, Đơn vị `₫`, Avatar thành viên & Ký tự Unicode với Web App (`src/utils/pdfReport.ts`, `src/utils/pdfReportData.ts`):**
+  - **Đơn vị `₫`**: Chỉ hiển thị tại các chỉ số chính (thẻ KPI tổng quan/cá nhân, con số quyết toán trọng tâm và kết quả công thức); lược bỏ `₫` lặp lại ở từng mục con và đưa `(₫)` lên tiêu đề chung (`Theo danh mục (₫)`, `Theo ngày (₫)`, `So sánh Đã chi & Phải chịu theo Thành viên (₫)`, `CÂN ĐỐI THU CHI & QUYẾT TOÁN (₫)`, `DANH SÁCH CHUYỂN KHOẢN QUYẾT TOÁN (₫)`, `Chi phí theo Hạng mục ([username]) (₫)`, `DANH SÁCH CHI TIẾT KHOẢN CHI (₫)`).
+  - **Thứ tự trình bày thống kê**: Hiển thị đúng thứ tự của Web App (`[Icon Lucide] Tên hạng mục đầy đủ` ở bên trái — `Tỷ lệ %` màu phụ đứng trước `Số tiền` in đậm ở bên phải, ví dụ: `Vé đi/về (máy bay/tàu xe)   49%   11.021.005`).
+  - **Đồng bộ Avatar thành viên**: Bổ sung huy hiệu Avatar tròn (màu thành viên + chữ cái đầu của tên) cho toàn bộ bảng và hộp có danh sách thành viên (Biểu đồ so sánh, Bảng cân đối thu chi, Bảng danh sách chuyển khoản quyết toán, Hộp quyết toán cá nhân và cột Người chi ở Bảng chi tiết khoản chi).
+  - **Ký tự Unicode gốc**: Sử dụng trực tiếp ký tự Unicode `→` (`U+2192`) và `•` (`U+2022`) từ bộ font `Plus Jakarta Sans` đã nhúng thay vì vẽ mũi tên vector thủ công.
+
+---
+
+## [v2026.11.03_20.55] - 2026-11-03
 
 ### Added
 - **Kiểm tra cảnh báo trùng khoản chi trong cùng ngày (`src/utils/format.ts`, `src/components/ExpenseFormModal.tsx`):**
@@ -21,7 +34,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20261103_1550] - 2026-11-03
+## [v2026.11.03_15.50] - 2026-11-03
 
 ### Changed
 - **Chuyển đổi 100% Icon & Đồ họa PDF sang Vector Gốc (`src/utils/pdfReport.ts`):**
@@ -34,7 +47,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20261102_1052] - 2026-11-02
+## [v2026.11.02_10.52] - 2026-11-02
 
 ### Changed
 - **Thiết kế lại Phụ lục Cá nhân PDF theo phong cách Minimalist Flat-Design (`src/utils/pdfReport.ts`):**
@@ -45,7 +58,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20261102_0825] - 2026-11-02
+## [v2026.11.02_08.25] - 2026-11-02
 
 ### Added
 - **Bản đồ Tính năng & Luồng Nghiệp vụ (`docs/FEATURE_MAP.md`):**
@@ -53,7 +66,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20261101_2008] - 2026-11-01
+## [v2026.11.01_20.08] - 2026-11-01
 
 ### Added
 - **Bảo vệ toàn vẹn khi Khóa sổ chuyến đi (`tripStatus: 'completed'`):**
@@ -79,11 +92,11 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
   - Chuyển sang cơ chế **Tiered Precache**: chỉ precache các tài nguyên giao diện thiết yếu (Core Shell & Tabs), loại trừ các gói chỉ dùng trực tuyến (`gasCode`, `pdfReport`).
   - Tính năng xuất báo cáo PDF (`pdfmake` qua CDN) được giới hạn chỉ hoạt động khi có kết nối mạng kèm cơ chế timeout 12 giây và thông báo rõ ràng.
 - **Chuẩn hóa định dạng phiên bản:**
-  - Áp dụng quy tắc phiên bản thống nhất `v[yyyymmdd_HHmm]` (GMT+7) trên toàn hệ thống (`src/version.ts`, `public/version.json`, `public/sw.js`).
+  - Áp dụng quy tắc phiên bản thống nhất `v[yyyy.mm.dd_HH.mm]` (GMT+7) trên toàn hệ thống (`src/version.ts`, `public/version.json`, `public/sw.js`).
 
 ---
 
-## [v20261101_1430] - 2026-11-01
+## [v2026.11.01_14.30] - 2026-11-01
 
 ### Added
 - **Quản lý phiên bản tập trung (`src/version.ts`):**
@@ -98,7 +111,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20260402_2200] - 2026-04-02
+## [v2026.04.02_22.00] - 2026-04-02
 
 ### Added
 - **Quản trị chuyến đi & Bảo mật PIN trên Server:**
@@ -108,7 +121,7 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
-## [v20260401_1200] - 2026-04-01
+## [v2026.04.01_12.00] - 2026-04-01
 
 ### Added
 - **Phát hành phiên bản nền tảng (Core Release):**
