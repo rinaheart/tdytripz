@@ -48,8 +48,15 @@ function syncVersionJsonPlugin() {
 
       // Phân tầng Precache (Phase 3 Audit):
       // - Tier A (Core Shell) & Tier B (Essential Features: index, ExpensesTab, SettlementTab, SettingsTab, Modals, pdfReportData, CSS) -> Precache 100% lúc cài đặt.
-      // - Tier C (Online-Only / On-Demand: gasCode-*.js [chỉ Admin copy Code.gs] & pdfReport-*.js [engine vẽ PDF tải CDN]) -> Không precache và không cache runtime trong SW.
-      const OPTIONAL_RUNTIME_CHUNK_PREFIXES = ['gasCode-', 'pdfReport-'];
+      // - Tier C (Online-Only / On-Demand: gasCode-*.js [chỉ Admin copy Code.gs] & pdfReport-*.js [engine vẽ PDF + jspdf]) -> Không precache và không cache runtime trong SW.
+      const OPTIONAL_RUNTIME_CHUNK_PREFIXES = [
+        'gasCode-',
+        'pdfReport-',
+        'jspdf-',
+        'html2canvas-',
+        'purify.es-',
+        'index.es-',
+      ];
 
       const assetFiles = fs
         .readdirSync(assetsDir)
@@ -94,6 +101,25 @@ export default defineConfig(({ command }) => {
     resolve: {
       alias: {
         '@': path.resolve(rootDir, '.'),
+      },
+    },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (
+              id.includes('node_modules/jspdf') ||
+              id.includes('node_modules/fflate') ||
+              id.includes('node_modules/fast-png') ||
+              id.includes('node_modules/iobuffer') ||
+              id.includes('/src/utils/pdf/') ||
+              id.includes('/src/utils/pdfLucideIcons') ||
+              id.includes('/src/utils/pdfReport.ts')
+            ) {
+              return 'pdfReport';
+            }
+          },
+        },
       },
     },
     server: {

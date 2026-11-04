@@ -22,7 +22,7 @@
 - **Quản trị chuyến đi & Xuất báo cáo PDF:**
   - **Admin PIN** (băm SHA-256 trên Google Sheets `ScriptProperties`) dùng để cấu hình chuyến đi và **Khóa sổ (`completed`)** khi kết thúc hành trình.
   - Khi chuyến đi đã khóa sổ, mọi thao tác thêm/sửa/xóa đều bị chặn ở cả Client lẫn Server; các khoản chi ngoại tuyến bị từ chối sẽ được giữ nguyên trong danh sách kèm cảnh báo rõ ràng để không mất dữ liệu.
-  - Xuất báo cáo quyết toán **PDF tiếng Việt** trực tuyến (tải động thư viện `pdfmake` qua CDN khi người dùng bấm xuất file, giữ dung lượng tải trang ban đầu siêu nhẹ).
+  - Xuất báo cáo quyết toán **PDF tiếng Việt** trực tuyến (tách thành lazy chunk `pdfReport` và tự host font `Plus Jakarta Sans` tại `public/fonts/`, không đưa vào precache của PWA để giữ dung lượng tải trang ban đầu siêu nhẹ).
 
 ---
 
@@ -34,6 +34,7 @@
 │   ├── FEATURE_MAP.md             # Bản đồ tính năng, sơ đồ luồng & hướng dẫn kiểm thử (Feature Map)
 │   └── NEXT_PHASE_PLAN.md         # Kế hoạch phát triển mở rộng
 ├── public/
+│   ├── fonts/                     # Font Plus Jakarta Sans (Medium & Bold) tự host cho PDF
 │   ├── sw.js                      # Service Worker (Tiered Precache + Stale-While-Revalidate)
 │   ├── manifest.json              # Cấu hình cài đặt PWA
 │   └── version.json               # Tự động đồng bộ từ src/version.ts khi build
@@ -57,9 +58,11 @@
 │   ├── utils/
 │   │   ├── math.ts                # Thuật toán chia tiền, quyết toán & cân đối
 │   │   ├── math.test.ts           # Unit tests cho thuật toán chia tiền & quyết toán
-│   │   ├── pdfReport.ts           # Xuất báo cáo PDF (Online-only qua CDN)
-│   │   ├── pdfReportData.ts       # Chuẩn bị dữ liệu báo cáo PDF
-│   │   └── pdfReport.test.ts      # Unit tests dữ liệu báo cáo PDF
+│   │   ├── pdf/                   # Hệ thống kết xuất PDF mô-đun hóa (theme, fonts, primitives, sections, buildDocument)
+│   │   ├── pdfLucideIcons.ts      # Bộ thông dịch & vẽ vector Lucide Icons cho PDF
+│   │   ├── pdfReport.ts           # Facade xuất báo cáo PDF (Lazy chunk)
+│   │   ├── pdfReportData.ts       # Tầng dữ liệu báo cáo PDF
+│   │   └── pdfReport.test.ts      # Unit tests dữ liệu & bố cục báo cáo PDF
 │   ├── types.ts                   # Định nghĩa TypeScript interfaces
 │   ├── version.ts                 # Nơi duy nhất khai báo APP_VERSION: v[yyyy.mm.dd_HH.mm] (GMT+7)
 │   └── App.tsx                    # Điều phối trạng thái, ChunkErrorBoundary & luồng tương tác chính
@@ -92,7 +95,7 @@ npm run build
 ```
 
 > **Quy tắc định dạng Version hệ thống:**
-> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyy.mm.dd_HH.mm]`** theo múi giờ **GMT+7** (ví dụ: `v2026.11.04_09.15`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
+> Mọi bản cập nhật trong `src/version.ts` và tài liệu phải tuân thủ định dạng **`v[yyyy.mm.dd_HH.mm]`** theo múi giờ **GMT+7** (ví dụ: `v2026.11.04_10.30`). Khi chạy `dev` hoặc `build`, `vite.config.ts` sẽ tự động cập nhật sang `public/version.json` và `public/sw.js`.
 
 ---
 

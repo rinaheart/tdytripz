@@ -466,7 +466,6 @@ test('Phase 5 [Scalability Benchmark]: 100, 500, 1000, and 5000 expenses perform
       members: DEFAULT_MEMBERS,
       categories: DEFAULT_CATEGORIES,
       expenses: dataset,
-      filterMemberId: 'all',
     });
     const tReport = performance.now() - t2;
 
@@ -474,7 +473,7 @@ test('Phase 5 [Scalability Benchmark]: 100, 500, 1000, and 5000 expenses perform
     assert.ok(simplified.length <= DEFAULT_MEMBERS.length);
     assert.ok(pairwise.length >= 0);
     assert.ok(matched.length > 0);
-    assert.ok(report.rows.length > 0);
+    assert.ok(report.ledger.length > 0);
     assert.ok(tMath < 150, `Math for ${N} items took ${tMath.toFixed(2)}ms (<150ms required)`);
     assert.ok(isEquivalentExpensePayload(dataset[0], dataset[0]));
   }

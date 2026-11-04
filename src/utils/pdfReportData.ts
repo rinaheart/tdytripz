@@ -4,41 +4,52 @@ import type {
   ExpenseRecord,
   Member,
   MemberBalance,
+  SplitMode,
   TripConfig,
 } from '../types';
-import { formatShortDateVN, formatVND, getNowGMT7 } from './format';
-import {
-  calculateBalances,
-  calculatePairwiseDebts,
-  simplifyDebts,
-} from './math';
+import { formatDateRangeVN, formatShortDateVN, formatVND, getNowGMT7 } from './format';
+import { calculateBalances, simplifyDebts } from './math';
+
+export type DayBucketKind = 'pre' | 'trip' | 'post' | 'unknown';
+
+export interface DayBucket {
+  key: string;
+  label: string;
+  kind: DayBucketKind;
+}
+
+export interface ReportParticipantsInfo {
+  kind: 'all' | 'except' | 'names' | 'count' | 'transfer';
+  text: string;
+}
 
 export interface ExpenseReportRow {
   id: string;
-  date: string;
+  time: string;
+  dateKey: string;
   title: string;
   payerId: string;
   payerName: string;
   payerAvatarColor: string;
+  recipientId?: string;
+  recipientName?: string;
+  recipientAvatarColor?: string;
   amount: number;
   amountFormatted: string;
-  memberShare: number | null;
-  memberShareFormatted: string | null;
-  typeLabel: string;
-  compactTypeLabel: string;
-  categoryIcon: string;
   recordType: 'expense' | 'transfer';
-  participantsSummary: string;
+  categoryIcon: string;
+  categoryShortName: string;
+  splitMode: SplitMode;
+  isCustomSplit: boolean;
+  participants: ReportParticipantsInfo;
 }
 
-export interface MemberReportSummary {
-  memberId: string;
-  memberName: string;
-  paidExpense: number;
-  owedExpense: number;
-  sentTransfer: number;
-  receivedTransfer: number;
-  balance: number;
+export interface LedgerGroup {
+  bucketKey: string;
+  label: string;
+  kind: DayBucketKind;
+  subtotal: number;
+  rows: ExpenseReportRow[];
 }
 
 export interface ReportCategoryBreakdown {
@@ -54,6 +65,7 @@ export interface ReportCategoryBreakdown {
 export interface ReportDayBreakdown {
   dateKey: string;
   label: string;
+  kind: DayBucketKind;
   amount: number;
   count: number;
   percentage: number;
@@ -73,21 +85,51 @@ export interface EnrichedDebtTransaction extends DebtTransaction {
   toBankInfo: string;
 }
 
-export interface MemberAppendixData {
+export interface SettlementSenderItem {
+  fromMemberId: string;
+  fromName: string;
+  fromAvatarColor: string;
+  amount: number;
+}
+
+export interface SettlementRecipientGroup {
+  toMemberId: string;
+  toName: string;
+  toAvatarColor: string;
+  bankInfo: string;
+  total: number;
+  receivedTransferAmount: number;
+  senders: SettlementSenderItem[];
+}
+
+export interface MemberCardPayTarget {
+  toMemberId: string;
+  toName: string;
+  toAvatarColor: string;
+  amount: number;
+}
+
+export interface MemberCardData {
   memberId: string;
   memberName: string;
   avatarColor: string;
   bankInfo: string;
   paidExpense: number;
   owedExpense: number;
-  sentTransfer: number;
-  receivedTransfer: number;
   netTransfer: number;
   balance: number;
-  finalSettlementActions: EnrichedDebtTransaction[];
+  direction: 'pay' | 'receive' | 'settled';
+  payTo: MemberCardPayTarget[];
+  receiveFromCount: number;
   byCategory: ReportCategoryBreakdown[];
-  paidRows: ExpenseReportRow[];
-  participatedRows: ExpenseReportRow[];
+}
+
+export interface TopPayerSummary {
+  memberId: string;
+  memberName: string;
+  avatarColor: string;
+  paidExpense: number;
+  percentage: number;
 }
 
 export interface ExpenseReportOverview {
@@ -96,7 +138,9 @@ export interface ExpenseReportOverview {
   expenseCount: number;
   transferCount: number;
   memberCount: number;
+  tripDays: number;
   averagePerMember: number;
+  topPayer: TopPayerSummary | null;
   byCategory: ReportCategoryBreakdown[];
   byDay: ReportDayBreakdown[];
 }
@@ -104,25 +148,112 @@ export interface ExpenseReportOverview {
 export interface ExpenseReportSettlement {
   balances: EnrichedMemberBalance[];
   simplifiedDebts: EnrichedDebtTransaction[];
-  pairwiseDebts: EnrichedDebtTransaction[];
+  settlementGroups: SettlementRecipientGroup[];
 }
 
 export interface ExpenseReportData {
   tripId: string;
   tripName: string;
   location: string;
+  accentColor: string;
   dateRangeLabel: string;
+  tripDays: number;
   generatedAt: string;
-  filterMemberId: string;
-  scopeLabel: string;
-  rows: ExpenseReportRow[];
-  totalExpenseAmount: number;
-  totalTransferAmount: number;
-  memberSummary: MemberReportSummary | null;
   overview: ExpenseReportOverview;
   settlement: ExpenseReportSettlement;
-  memberAppendices: MemberAppendixData[];
+  settlementGroups: SettlementRecipientGroup[];
+  ledger: LedgerGroup[];
+  memberCards: MemberCardData[];
   suggestedFileName: string;
+}
+
+const WEEKDAYS_VN = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+
+/**
+ * Phân bổ tỷ lệ phần trăm số nguyên theo thuật toán Largest Remainder (tổng luôn bằng 100 khi có dữ liệu > 0)
+ */
+export function allocatePercentages(values: number[]): number[] {
+  if (values.length === 0) return [];
+  const clean = values.map((v) => Math.max(0, Number(v) || 0));
+  const total = clean.reduce((acc, v) => acc + v, 0);
+  if (total <= 0) {
+    return clean.map(() => 0);
+  }
+
+  const exacts = clean.map((v) => (v * 100) / total);
+  const floors = exacts.map((e) => Math.floor(e));
+  let remainderCount = 100 - floors.reduce((acc, f) => acc + f, 0);
+
+  const order = exacts
+    .map((e, idx) => ({
+      idx,
+      rem: e - floors[idx],
+      val: clean[idx],
+    }))
+    .sort((a, b) => {
+      if (Math.abs(b.rem - a.rem) > 1e-9) return b.rem - a.rem;
+      if (b.val !== a.val) return b.val - a.val;
+      return a.idx - b.idx;
+    });
+
+  for (let i = 0; i < order.length && remainderCount > 0; i++) {
+    floors[order[i].idx] += 1;
+    remainderCount -= 1;
+  }
+
+  return floors;
+}
+
+/**
+ * Phân nhóm ngày cho biểu đồ "Theo ngày" và "Sổ chi tiết":
+ * - Trước chuyến (`dateKey < startDate`): gộp chung 1 nhóm `PRE_TRIP` ("Trước chuyến")
+ * - Trong chuyến (`startDate <= dateKey <= endDate`): `Thứ Sáu 22/10 · Ngày 1`
+ * - Sau chuyến (`dateKey > endDate`): gộp nhóm `POST_TRIP` ("Sau chuyến")
+ */
+export function getDayBucket(
+  dateKey: string,
+  startDate?: string,
+  endDate?: string
+): DayBucket {
+  const cleanDate = (dateKey || '').trim().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
+    return { key: 'UNKNOWN', label: 'Chưa rõ ngày', kind: 'unknown' };
+  }
+
+  const cleanStart = (startDate || '').trim().slice(0, 10);
+  const cleanEnd = (endDate || '').trim().slice(0, 10);
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStart) && cleanDate < cleanStart) {
+    return { key: 'PRE_TRIP', label: 'Trước chuyến', kind: 'pre' };
+  }
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanEnd) && cleanDate > cleanEnd) {
+    return { key: 'POST_TRIP', label: 'Sau chuyến', kind: 'post' };
+  }
+
+  const [y, m, d] = cleanDate.split('-').map(Number);
+  const dateObj = new Date(Date.UTC(y, m - 1, d));
+  const weekday = WEEKDAYS_VN[dateObj.getUTCDay()];
+  const ddmm = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStart)) {
+    const [sy, sm, sd] = cleanStart.split('-').map(Number);
+    const startObj = new Date(Date.UTC(sy, sm - 1, sd));
+    const diffDays = Math.floor((dateObj.getTime() - startObj.getTime()) / 86400000) + 1;
+    if (diffDays >= 1) {
+      return {
+        key: cleanDate,
+        label: `${weekday} ${ddmm} · Ngày ${diffDays}`,
+        kind: 'trip',
+      };
+    }
+  }
+
+  return {
+    key: cleanDate,
+    label: `${weekday} ${ddmm}`,
+    kind: 'trip',
+  };
 }
 
 export function formatSpentAtReportVN(spentAt: string): string {
@@ -141,39 +272,26 @@ export function sanitizeFileNameSegment(input: string): string {
     .replace(/đ/g, 'd')
     .replace(/Đ/g, 'D')
     .replace(/[^a-zA-Z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
     .toLowerCase();
 }
 
 /**
- * Chuẩn hóa tên địa điểm để đặt tên file báo cáo theo mẫu `report-[địa-điểm]-[yyyymmdd-HHmm].pdf`
- * Ví dụ: "Hà Nội" -> "Hà-Nội", "Đà Lạt, Lâm Đồng" -> "Đà-Lạt-Lâm-Đồng"
- */
-export function formatReportLocationSegment(location: string, fallbackTripName?: string): string {
-  const raw = (location || '').trim() || (fallbackTripName || '').trim() || 'Chuyen-di';
-  const cleaned = raw
-    .replace(/[/\\?%*:|"<>.,;•|()[\]{}!@#$^&+=~`]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  return cleaned || 'Chuyen-di';
-}
-
-/**
- * Tạo tên file báo cáo đơn giản: `report-[địa-điểm]-[yyyymmdd-HHmm].pdf`
- * Ví dụ: `report-Hà-Nội-20261103-1515.pdf`
+ * Tạo tên file báo cáo chuẩn ASCII: `report_${sanitizeFileNameSegment(location||tripName)}_${yyyymmdd}_${HHmm}.pdf`
+ * Ví dụ: `report_ha-noi_20261104_0923.pdf`
  */
 export function buildReportFileName(
   location: string,
   fallbackTripName?: string,
   nowGMT7Str?: string
 ): string {
-  const locSegment = formatReportLocationSegment(location, fallbackTripName);
+  const rawLoc = (location || '').trim() || (fallbackTripName || '').trim() || 'report';
+  const locSegment = sanitizeFileNameSegment(rawLoc) || 'report';
   const tsSource = (nowGMT7Str || '').trim();
   const m = tsSource.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
-  const timestampSegment = m ? `${m[1]}${m[2]}${m[3]}-${m[4]}${m[5]}` : '00000000-0000';
-  return `report-${locSegment}-${timestampSegment}.pdf`;
+  const timestampSegment = m ? `${m[1]}${m[2]}${m[3]}_${m[4]}${m[5]}` : '00000000_0000';
+  return `report_${locSegment}_${timestampSegment}.pdf`;
 }
 
 export function shortenCategoryLabelForTable(label: string): string {
@@ -187,7 +305,7 @@ export function shortenCategoryLabelForTable(label: string): string {
   return normalized || label;
 }
 
-function resolveCategoryIconName(cat?: Category, rawName?: string): string {
+export function resolveCategoryIconName(cat?: Category, rawName?: string): string {
   const icon = (cat?.icon || '').trim();
   if (
     icon === 'Plane' ||
@@ -253,51 +371,71 @@ function getEffectiveRecordAmount(record: ExpenseRecord): number {
   return splitSum > 0 ? splitSum : Math.round(record.amount || 0);
 }
 
-function formatParticipantsSummary(
+/**
+ * Xây dựng thông tin cột "Chia" trên sổ chi tiết:
+ * - `all`: `Cả nhóm` (tất cả thành viên tham gia)
+ * - `except`: `Trừ <tên>` (vắng đúng 1 người trong nhóm >= 3 thành viên)
+ * - `names`: danh sách tên (<= 3 người)
+ * - `count`: `N người` (> 3 người và vắng >= 2 người)
+ * - `transfer`: `<Người chuyển> → <Người nhận>`
+ */
+export function buildParticipantsInfo(
   record: ExpenseRecord,
-  memberMap: Map<string, Member>,
-  totalActiveMembersCount: number
-): string {
+  activeMembers: Member[],
+  memberMap: Map<string, Member>
+): ReportParticipantsInfo {
   const entries = Object.entries(record.splits || {}).filter(
     ([, val]) => Math.round(val || 0) > 0
   );
-  if (entries.length === 0) return '—';
 
-  const names = entries.map(([id]) => memberMap.get(id)?.name || id);
   if (record.type === 'transfer') {
     const payerName = memberMap.get(record.payer)?.name || record.payer;
-    return `${payerName} → ${names.join(', ')}`;
+    const toNames = entries.map(([id]) => memberMap.get(id)?.name || id);
+    return {
+      kind: 'transfer',
+      text: toNames.length > 0 ? `${payerName} → ${toNames.join(', ')}` : payerName,
+    };
   }
 
-  // Nếu khoản chi chia hết cho tất cả thành viên trong đoàn thì chỉ ghi "xx người"
-  if (totalActiveMembersCount > 0 && entries.length >= totalActiveMembersCount) {
-    return `${entries.length} người`;
+  if (entries.length === 0) {
+    return { kind: 'count', text: '0 người' };
   }
 
+  const participantIds = entries.map(([id]) => id);
+  const participantSet = new Set(participantIds);
+  const missingMembers = activeMembers.filter((m) => !participantSet.has(m.id));
+
+  if (activeMembers.length > 0 && missingMembers.length === 0) {
+    return { kind: 'all', text: 'Cả nhóm' };
+  }
+
+  if (activeMembers.length >= 3 && missingMembers.length === 1 && participantIds.length >= 2) {
+    return { kind: 'except', text: `Trừ ${missingMembers[0].name}` };
+  }
+
+  const names = participantIds.map((id) => memberMap.get(id)?.name || id);
   if (names.length <= 3) {
-    return names.join(', ');
+    return { kind: 'names', text: names.join(', ') };
   }
-  return `${names.length} người (${names.slice(0, 2).join(', ')}…)`;
+
+  return { kind: 'count', text: `${names.length} người` };
 }
 
-function computeDayLabel(datePart: string, startDate?: string): string {
-  if (!datePart || datePart.length < 10) return 'Chưa rõ ngày';
-  const shortVN = formatShortDateVN(datePart);
-  if (!startDate || startDate.length < 10) {
-    return shortVN;
-  }
-  if (datePart < startDate) {
-    return `Trước chuyến (${shortVN.slice(0, 5)})`;
-  }
-  const startMs = Date.parse(`${startDate.slice(0, 10)}T00:00:00Z`);
-  const curMs = Date.parse(`${datePart.slice(0, 10)}T00:00:00Z`);
-  if (!Number.isNaN(startMs) && !Number.isNaN(curMs)) {
-    const diffDays = Math.floor((curMs - startMs) / 86400000) + 1;
-    if (diffDays >= 1 && diffDays <= 60) {
-      return `Ngày ${diffDays} (${shortVN})`;
+function computeTripDays(
+  startDate?: string,
+  endDate?: string,
+  fallbackDayCount = 1
+): number {
+  const s = (startDate || '').trim().slice(0, 10);
+  const e = (endDate || '').trim().slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s) && /^\d{4}-\d{2}-\d{2}$/.test(e)) {
+    const startMs = Date.parse(`${s}T00:00:00Z`);
+    const endMs = Date.parse(`${e}T00:00:00Z`);
+    if (!Number.isNaN(startMs) && !Number.isNaN(endMs) && endMs >= startMs) {
+      return Math.round((endMs - startMs) / 86400000) + 1;
     }
   }
-  return shortVN;
+  return Math.max(1, fallbackDayCount);
 }
 
 export function buildExpenseReportData(params: {
@@ -305,10 +443,8 @@ export function buildExpenseReportData(params: {
   members: Member[];
   categories: Category[];
   expenses: ExpenseRecord[];
-  filterMemberId: string; // 'all' hoặc member.id
 }): ExpenseReportData {
-  const { config, members, categories, expenses, filterMemberId } = params;
-  const normalizedFilter = filterMemberId && filterMemberId !== 'all' ? filterMemberId : 'all';
+  const { config, members, categories, expenses } = params;
 
   const activeMembers = members.filter((m) => m.active !== false);
   const memberCount = activeMembers.length;
@@ -330,7 +466,6 @@ export function buildExpenseReportData(params: {
       return a.id.localeCompare(b.id);
     });
 
-  // 1. Tính toán Overview cho toàn chuyến đi
   let fullExpenseTotal = 0;
   let fullTransferTotal = 0;
   let fullExpenseCount = 0;
@@ -340,10 +475,100 @@ export function buildExpenseReportData(params: {
     string,
     { name: string; fullName: string; icon: string; amount: number; count: number }
   >();
-  const dayAgg = new Map<string, { label: string; amount: number; count: number }>();
+  const dayAgg = new Map<
+    string,
+    { label: string; kind: DayBucketKind; sortKey: string; amount: number; count: number }
+  >();
+  const ledgerGroupMap = new Map<string, LedgerGroup & { sortKey: string }>();
+
+  const bucketSortKey = (bucket: DayBucket): string => {
+    if (bucket.kind === 'pre') return '0000-00-00';
+    if (bucket.kind === 'post') return '9999-12-30';
+    if (bucket.kind === 'unknown') return '9999-12-31';
+    return bucket.key;
+  };
 
   for (const rec of allActiveRecords) {
     const effAmount = getEffectiveRecordAmount(rec);
+    const rawSpent = (rec.spentAt || '').trim();
+    const dateKey = rawSpent.slice(0, 10) || 'unknown';
+    const timePart = rawSpent.length >= 16 ? rawSpent.slice(11, 16) : '';
+    const ddmm = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? formatShortDateVN(dateKey).slice(0, 5) : '';
+    const bucket = getDayBucket(dateKey, config.startDate, config.endDate);
+
+    const rowTime =
+      bucket.kind === 'trip'
+        ? timePart || ddmm
+        : ddmm && timePart
+          ? `${ddmm} ${timePart}`
+          : ddmm || timePart;
+
+    const payerMember = memberMap.get(rec.payer);
+    const payerName = payerMember?.name || rec.payer;
+    const payerAvatarColor = payerMember?.avatarColor || '#0f766e';
+
+    const catObj = categoryMap.get(rec.categoryId);
+    const rawFullName = (catObj?.name || 'Khác').trim();
+    const categoryShortName =
+      rec.type === 'transfer' ? 'Chuyển trả' : shortenCategoryLabelForTable(rawFullName);
+    const categoryIcon =
+      rec.type === 'transfer'
+        ? 'ArrowRightLeft'
+        : resolveCategoryIconName(catObj, categoryShortName);
+
+    let recipientId: string | undefined;
+    let recipientName: string | undefined;
+    let recipientAvatarColor: string | undefined;
+    if (rec.type === 'transfer') {
+      const firstSplitEntry = Object.entries(rec.splits || {}).find(
+        ([, val]) => Math.round(val || 0) > 0
+      );
+      recipientId = firstSplitEntry?.[0];
+      const recMember = recipientId ? memberMap.get(recipientId) : undefined;
+      recipientName = recMember?.name || recipientId || '';
+      recipientAvatarColor = recMember?.avatarColor || '#0f766e';
+    }
+
+    const splitMode: SplitMode = rec.splitMode || 'equal';
+    const isCustomSplit =
+      rec.type === 'expense' && (splitMode === 'exact' || splitMode === 'shares');
+    const participants = buildParticipantsInfo(rec, activeMembers, memberMap);
+
+    const row: ExpenseReportRow = {
+      id: rec.id,
+      time: rowTime,
+      dateKey,
+      title: rec.title || (rec.type === 'transfer' ? 'Chuyển khoản quyết toán' : 'Khoản chi'),
+      payerId: rec.payer,
+      payerName,
+      payerAvatarColor,
+      recipientId,
+      recipientName,
+      recipientAvatarColor,
+      amount: effAmount,
+      amountFormatted: formatVND(effAmount, false),
+      recordType: rec.type,
+      categoryIcon,
+      categoryShortName,
+      splitMode,
+      isCustomSplit,
+      participants,
+    };
+
+    const existingLedgerGrp = ledgerGroupMap.get(bucket.key) || {
+      bucketKey: bucket.key,
+      label: bucket.label,
+      kind: bucket.kind,
+      subtotal: 0,
+      rows: [],
+      sortKey: bucketSortKey(bucket),
+    };
+    if (rec.type === 'expense') {
+      existingLedgerGrp.subtotal += effAmount;
+    }
+    existingLedgerGrp.rows.push(row);
+    ledgerGroupMap.set(bucket.key, existingLedgerGrp);
+
     if (rec.type === 'transfer') {
       fullTransferTotal += effAmount;
       fullTransferCount += 1;
@@ -352,14 +577,10 @@ export function buildExpenseReportData(params: {
       fullExpenseCount += 1;
 
       const catId = rec.categoryId || 'cat_other';
-      const catObj = categoryMap.get(catId);
-      const rawFullName = (catObj?.name || 'Khác').trim();
-      const catName = shortenCategoryLabelForTable(rawFullName);
-      const catIcon = resolveCategoryIconName(catObj, catName);
       const curCat = catAgg.get(catId) || {
-        name: catName,
+        name: categoryShortName,
         fullName: rawFullName,
-        icon: catIcon,
+        icon: categoryIcon,
         amount: 0,
         count: 0,
       };
@@ -367,41 +588,53 @@ export function buildExpenseReportData(params: {
       curCat.count += 1;
       catAgg.set(catId, curCat);
 
-      const dateKey = (rec.spentAt || '').trim().slice(0, 10) || 'unknown';
-      const curDay = dayAgg.get(dateKey) || {
-        label: computeDayLabel(dateKey, config.startDate),
+      const curDay = dayAgg.get(bucket.key) || {
+        label: bucket.label,
+        kind: bucket.kind,
+        sortKey: bucketSortKey(bucket),
         amount: 0,
         count: 0,
       };
       curDay.amount += effAmount;
       curDay.count += 1;
-      dayAgg.set(dateKey, curDay);
+      dayAgg.set(bucket.key, curDay);
     }
   }
 
-  const byCategory: ReportCategoryBreakdown[] = Array.from(catAgg.entries())
-    .map(([categoryId, item]) => ({
-      categoryId,
-      categoryName: item.name,
-      fullCategoryName: item.fullName,
-      categoryIcon: item.icon,
-      amount: item.amount,
-      count: item.count,
-      percentage:
-        fullExpenseTotal > 0 ? Math.round((item.amount / fullExpenseTotal) * 1000) / 10 : 0,
-    }))
-    .sort((a, b) => b.amount - a.amount);
+  const sortedCats = Array.from(catAgg.entries()).sort((a, b) => b[1].amount - a[1].amount);
+  const catPercentages = allocatePercentages(sortedCats.map(([, item]) => item.amount));
+  const byCategory: ReportCategoryBreakdown[] = sortedCats.map(([categoryId, item], idx) => ({
+    categoryId,
+    categoryName: item.name,
+    fullCategoryName: item.fullName,
+    categoryIcon: item.icon,
+    amount: item.amount,
+    count: item.count,
+    percentage: catPercentages[idx] ?? 0,
+  }));
 
-  const byDay: ReportDayBreakdown[] = Array.from(dayAgg.entries())
-    .sort(([k1], [k2]) => k1.localeCompare(k2))
-    .map(([dateKey, item]) => ({
-      dateKey,
-      label: item.label,
-      amount: item.amount,
-      count: item.count,
-      percentage:
-        fullExpenseTotal > 0 ? Math.round((item.amount / fullExpenseTotal) * 1000) / 10 : 0,
-    }));
+  const sortedDays = Array.from(dayAgg.entries()).sort((a, b) =>
+    a[1].sortKey.localeCompare(b[1].sortKey)
+  );
+  const dayPercentages = allocatePercentages(sortedDays.map(([, item]) => item.amount));
+  const byDay: ReportDayBreakdown[] = sortedDays.map(([dateKey, item], idx) => ({
+    dateKey,
+    label: item.label,
+    kind: item.kind,
+    amount: item.amount,
+    count: item.count,
+    percentage: dayPercentages[idx] ?? 0,
+  }));
+
+  const tripDaysCount = computeTripDays(
+    config.startDate,
+    config.endDate,
+    byDay.filter((d) => d.kind === 'trip').length || byDay.length
+  );
+
+  const ledger: LedgerGroup[] = Array.from(ledgerGroupMap.values())
+    .sort((a, b) => a.sortKey.localeCompare(b.sortKey))
+    .map(({ sortKey: _unused, ...grp }) => grp);
 
   const averagePerMember = memberCount > 0 ? Math.round(fullExpenseTotal / memberCount) : 0;
 
@@ -417,114 +650,88 @@ export function buildExpenseReportData(params: {
     };
   });
 
-  const enrichDebtList = (list: DebtTransaction[]): EnrichedDebtTransaction[] =>
-    list.map((d) => {
-      const fromM = memberMap.get(d.fromMemberId);
-      const toM = memberMap.get(d.toMemberId);
-      return {
-        ...d,
-        fromMemberName: fromM?.name || d.fromMemberId,
-        fromAvatarColor: fromM?.avatarColor || '#be123c',
-        toMemberName: toM?.name || d.toMemberId,
-        toAvatarColor: toM?.avatarColor || '#0f766e',
-        toBankInfo: formatMemberBankInfo(toM),
-      };
-    });
-
-  const simplifiedDebts = enrichDebtList(simplifyDebts(rawBalances));
-  const pairwiseDebts = enrichDebtList(calculatePairwiseDebts(activeMembers, allActiveRecords));
-
-  // Helper tạo ExpenseReportRow
-  const toReportRow = (
-    e: ExpenseRecord,
-    targetMemberId: string | null
-  ): ExpenseReportRow => {
-    const cleanAmount = getEffectiveRecordAmount(e);
-    const payerMember = memberMap.get(e.payer);
-    const payerName = payerMember?.name || e.payer;
-    const payerAvatarColor = payerMember?.avatarColor || '#0f766e';
-    const catObj = categoryMap.get(e.categoryId);
-    const rawCatName = catObj?.name || 'Khác';
-    const typeLabel = e.type === 'transfer' ? 'Chuyển trả' : shortenCategoryLabelForTable(rawCatName);
-    const compactTypeLabel = typeLabel;
-    const categoryIcon =
-      e.type === 'transfer' ? 'ArrowRightLeft' : resolveCategoryIconName(catObj, typeLabel);
-    const memberShare =
-      targetMemberId === null ? null : Math.round(e.splits?.[targetMemberId] || 0);
-
+  const simplifiedDebts: EnrichedDebtTransaction[] = simplifyDebts(rawBalances).map((d) => {
+    const fromM = memberMap.get(d.fromMemberId);
+    const toM = memberMap.get(d.toMemberId);
     return {
-      id: e.id,
-      date: formatSpentAtReportVN(e.spentAt),
-      title: e.title || (e.type === 'transfer' ? 'Chuyển khoản quyết toán' : 'Khoản chi'),
-      payerId: e.payer,
-      payerName,
-      payerAvatarColor,
-      amount: cleanAmount,
-      amountFormatted: formatVND(cleanAmount, false),
-      memberShare,
-      memberShareFormatted: memberShare !== null ? formatVND(memberShare, false) : null,
-      typeLabel,
-      compactTypeLabel,
-      categoryIcon,
-      recordType: e.type,
-      participantsSummary: formatParticipantsSummary(e, memberMap, memberCount),
+      ...d,
+      fromMemberName: fromM?.name || d.fromMemberId,
+      fromAvatarColor: fromM?.avatarColor || '#be123c',
+      toMemberName: toM?.name || d.toMemberId,
+      toAvatarColor: toM?.avatarColor || '#0f766e',
+      toBankInfo: formatMemberBankInfo(toM),
     };
-  };
-
-  // 3. Xây dựng danh sách bản ghi theo bộ lọc chính
-  const filteredRecords = allActiveRecords.filter((e) => {
-    if (normalizedFilter === 'all') return true;
-    const isPayer = e.payer === normalizedFilter;
-    const share = Math.round(e.splits?.[normalizedFilter] || 0);
-    return isPayer || share > 0;
   });
 
-  let totalExpenseAmount = 0;
-  let totalTransferAmount = 0;
+  // Gom simplifiedDebts theo người nhận (settlementGroups)
+  const recipientGroupMap = new Map<string, SettlementRecipientGroup>();
+  for (const debt of simplifiedDebts) {
+    const recBalance = enrichedBalances.find((b) => b.memberId === debt.toMemberId);
+    const existing = recipientGroupMap.get(debt.toMemberId) || {
+      toMemberId: debt.toMemberId,
+      toName: debt.toMemberName,
+      toAvatarColor: debt.toAvatarColor,
+      bankInfo: debt.toBankInfo,
+      total: 0,
+      receivedTransferAmount: recBalance?.receivedTransfer || 0,
+      senders: [],
+    };
+    existing.total += debt.amount;
+    existing.senders.push({
+      fromMemberId: debt.fromMemberId,
+      fromName: debt.fromMemberName,
+      fromAvatarColor: debt.fromAvatarColor,
+      amount: debt.amount,
+    });
+    recipientGroupMap.set(debt.toMemberId, existing);
+  }
 
-  const rows: ExpenseReportRow[] = filteredRecords.map((e) => {
-    const cleanAmount = getEffectiveRecordAmount(e);
-    if (e.type === 'transfer') {
-      totalTransferAmount += cleanAmount;
-    } else {
-      totalExpenseAmount += cleanAmount;
-    }
-    return toReportRow(e, normalizedFilter === 'all' ? null : normalizedFilter);
-  });
+  const settlementGroups: SettlementRecipientGroup[] = Array.from(recipientGroupMap.values())
+    .map((grp) => ({
+      ...grp,
+      senders: [...grp.senders].sort((a, b) => b.amount - a.amount),
+    }))
+    .sort((a, b) => b.total - a.total);
 
-  // 4. Xây dựng Phụ lục chi tiết từng thành viên (Member Appendices)
-  const buildAppendixForMember = (m: Member): MemberAppendixData => {
-    const bal = enrichedBalances.find((b) => b.memberId === m.id);
-    const paidExpense = bal?.paidExpense || 0;
-    const owedExpense = bal?.owedExpense || 0;
-    const sentTransfer = bal?.sentTransfer || 0;
-    const receivedTransfer = bal?.receivedTransfer || 0;
-    const netTransfer = bal?.netTransfer || 0;
-    const balance = bal?.balance || 0;
+  // Ứng trước nhiều nhất (topPayer)
+  const sortedPayers = [...enrichedBalances].sort((a, b) => b.paidExpense - a.paidExpense);
+  const payerPercentages = allocatePercentages(sortedPayers.map((p) => p.paidExpense));
+  const topPayer: TopPayerSummary | null =
+    sortedPayers.length > 0 && sortedPayers[0].paidExpense > 0
+      ? {
+          memberId: sortedPayers[0].memberId,
+          memberName: sortedPayers[0].memberName,
+          avatarColor: sortedPayers[0].avatarColor,
+          paidExpense: sortedPayers[0].paidExpense,
+          percentage: payerPercentages[0] ?? 0,
+        }
+      : null;
 
-    const finalSettlementActions = simplifiedDebts.filter(
-      (d) => d.fromMemberId === m.id || d.toMemberId === m.id
-    );
+  // 3. Sinh MemberCards từ settlement.balances (đảm bảo luôn khớp 100% với quyết toán)
+  const memberCards: MemberCardData[] = enrichedBalances.map((bal) => {
+    const payTo: MemberCardPayTarget[] = simplifiedDebts
+      .filter((d) => d.fromMemberId === bal.memberId)
+      .sort((a, b) => b.amount - a.amount)
+      .map((d) => ({
+        toMemberId: d.toMemberId,
+        toName: d.toMemberName,
+        toAvatarColor: d.toAvatarColor,
+        amount: d.amount,
+      }));
 
-    const paidRows = allActiveRecords
-      .filter((e) => e.payer === m.id)
-      .map((e) => toReportRow(e, m.id));
-
-    const participatedRows = allActiveRecords
-      .filter((e) => Math.round(e.splits?.[m.id] || 0) > 0)
-      .map((e) => toReportRow(e, m.id));
+    const receiveFromCount = simplifiedDebts.filter(
+      (d) => d.toMemberId === bal.memberId
+    ).length;
 
     const personalCatMap = new Map<
       string,
       { name: string; fullName: string; icon: string; amount: number; count: number }
     >();
-    let personalTotalOwed = 0;
 
     for (const e of allActiveRecords) {
       if (e.type !== 'expense') continue;
-      const myShare = Math.round(e.splits?.[m.id] || 0);
+      const myShare = Math.round(e.splits?.[bal.memberId] || 0);
       if (myShare <= 0) continue;
-      personalTotalOwed += myShare;
       const catId = e.categoryId || 'cat_other';
       const catObj = categoryMap.get(catId);
       const rawFullName = (catObj?.name || 'Khác').trim();
@@ -542,70 +749,47 @@ export function buildExpenseReportData(params: {
       personalCatMap.set(catId, cur);
     }
 
-    const personalByCategory: ReportCategoryBreakdown[] = Array.from(personalCatMap.entries())
-      .map(([categoryId, item]) => ({
+    const sortedPersonalCats = Array.from(personalCatMap.entries()).sort(
+      (a, b) => b[1].amount - a[1].amount
+    );
+    const personalCatPcts = allocatePercentages(
+      sortedPersonalCats.map(([, item]) => item.amount)
+    );
+    const personalByCategory: ReportCategoryBreakdown[] = sortedPersonalCats.map(
+      ([categoryId, item], idx) => ({
         categoryId,
         categoryName: item.name,
         fullCategoryName: item.fullName,
         categoryIcon: item.icon,
         amount: item.amount,
         count: item.count,
-        percentage:
-          personalTotalOwed > 0
-            ? Math.round((item.amount / personalTotalOwed) * 1000) / 10
-            : 0,
-      }))
-      .sort((a, b) => b.amount - a.amount);
+        percentage: personalCatPcts[idx] ?? 0,
+      })
+    );
+
+    const direction: 'pay' | 'receive' | 'settled' =
+      bal.balance < 0 ? 'pay' : bal.balance > 0 ? 'receive' : 'settled';
 
     return {
-      memberId: m.id,
-      memberName: m.name,
-      avatarColor: m.avatarColor || '#0f766e',
-      bankInfo: formatMemberBankInfo(m),
-      paidExpense,
-      owedExpense,
-      sentTransfer,
-      receivedTransfer,
-      netTransfer,
-      balance,
-      finalSettlementActions,
+      memberId: bal.memberId,
+      memberName: bal.memberName,
+      avatarColor: bal.avatarColor,
+      bankInfo: bal.bankInfo,
+      paidExpense: bal.paidExpense,
+      owedExpense: bal.owedExpense,
+      netTransfer: bal.netTransfer,
+      balance: bal.balance,
+      direction,
+      payTo,
+      receiveFromCount,
       byCategory: personalByCategory,
-      paidRows,
-      participatedRows,
     };
-  };
-
-  const targetMembersForAppendix =
-    normalizedFilter === 'all'
-      ? activeMembers
-      : activeMembers.filter((m) => m.id === normalizedFilter);
-
-  const memberAppendices = targetMembersForAppendix.map(buildAppendixForMember);
-
-  let memberSummary: MemberReportSummary | null = null;
-  let scopeLabel = 'Toàn bộ chuyến đi';
-
-  if (normalizedFilter !== 'all') {
-    const targetMember = memberMap.get(normalizedFilter);
-    const memberName = targetMember?.name || normalizedFilter;
-    scopeLabel = `Thành viên: ${memberName}`;
-    const foundBalance = enrichedBalances.find((b) => b.memberId === normalizedFilter);
-
-    memberSummary = {
-      memberId: normalizedFilter,
-      memberName,
-      paidExpense: foundBalance?.paidExpense || 0,
-      owedExpense: foundBalance?.owedExpense || 0,
-      sentTransfer: foundBalance?.sentTransfer || 0,
-      receivedTransfer: foundBalance?.receivedTransfer || 0,
-      balance: foundBalance?.balance || 0,
-    };
-  }
+  });
 
   const nowGMT7 = getNowGMT7(false);
   const dateRangeLabel =
     config.startDate && config.endDate
-      ? `${formatShortDateVN(config.startDate)} - ${formatShortDateVN(config.endDate)}`
+      ? formatDateRangeVN(config.startDate, config.endDate)
       : config.startDate
         ? formatShortDateVN(config.startDate)
         : '';
@@ -614,30 +798,30 @@ export function buildExpenseReportData(params: {
     tripId: config.tripId,
     tripName: config.tripName || 'Chuyến đi',
     location: config.location || '',
+    accentColor: config.accentColor || '#000777',
     dateRangeLabel,
+    tripDays: tripDaysCount,
     generatedAt: formatSpentAtReportVN(nowGMT7),
-    filterMemberId: normalizedFilter,
-    scopeLabel,
-    rows,
-    totalExpenseAmount,
-    totalTransferAmount,
-    memberSummary,
     overview: {
       totalExpenseAmount: fullExpenseTotal,
       totalTransferAmount: fullTransferTotal,
       expenseCount: fullExpenseCount,
       transferCount: fullTransferCount,
       memberCount,
+      tripDays: tripDaysCount,
       averagePerMember,
+      topPayer,
       byCategory,
       byDay,
     },
     settlement: {
       balances: enrichedBalances,
       simplifiedDebts,
-      pairwiseDebts,
+      settlementGroups,
     },
-    memberAppendices,
+    settlementGroups,
+    ledger,
+    memberCards,
     suggestedFileName: buildReportFileName(config.location, config.tripName, nowGMT7),
   };
 }

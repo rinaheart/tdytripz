@@ -6,6 +6,19 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
+## [v2026.11.04_10.30] - 2026-11-04
+
+### Changed
+- **Tái cấu trúc & Tối ưu hóa toàn diện hệ thống Xuất Báo Cáo PDF (`src/utils/pdfReportData.ts`, `src/utils/pdfReport.ts`, `src/utils/pdf/*`):**
+  - **Hạ tầng Lazy Chunk & Font tự host (Q1 = B)**: Nạp `jspdf@4.2.1` và `jspdf-autotable@5.0.9` từ npm qua `import()` thành lazy chunk độc lập (`pdfReport-*.js`), tự host font `PlusJakartaSans-Medium.ttf` và `PlusJakartaSans-Bold.ttf` tại `public/fonts/`, loại bỏ hoàn toàn khỏi `PRECACHE_URLS` và cache của Service Worker; bỏ fallback im lặng sang `helvetica`/`Roboto`.
+  - **Cấu trúc 3 phần cô đọng (7 trang xuống 3 trang cho chuyến 5 người / 42 khoản chi)**:
+    - **Trang 1 (Tổng quan & Quyết toán trọng tâm)**: Banner dẫn xuất từ `config.accentColor`, 3 thẻ KPI (`Tổng chi`, `Bình quân/người`, `Ứng trước nhiều nhất`), Khối quyết toán Hero nhóm theo người nhận (in STK đúng 1 lần, thanh ngang tỉ lệ theo số tiền từng người chuyển, ghi chú trừ chuyển trả nếu có), và 2 biểu đồ cạnh nhau (`Theo danh mục`, `Theo ngày` không lặp icon lịch, tổng phần trăm luôn đúng `100%` theo Largest Remainder).
+    - **Trang 2 (Sổ chi tiết theo ngày)**: Gộp các khoản trước chuyến vào nhóm `Trước chuyến`, nhóm theo ngày kèm tổng phụ bên phải; bảng 5 cột (`Giờ | Nội dung | Người chi | Chia | Số tiền`), dòng `transfer` nền tím nhạt `[Avatar] A → [Avatar] B`, pill hổ phách `Chia riêng` khi `splitMode !== 'equal'`, và nhãn `Trừ <tên>` khi vắng đúng 1 người.
+    - **Trang 3 (Phụ lục thẻ cá nhân 2 cột)**: Lưới thẻ cá nhân 2 cột (`~89×46mm` mỗi thẻ, ≤10 người vừa 1 trang) đối soát trực tiếp từ `settlement.balances`, kèm thanh stacked 100% theo hạng mục và chú giải hạng mục 1 lần ở cuối trang.
+  - **Quy ước tên file ASCII**: Chuẩn hóa thành `report_<slug>_<yyyymmdd>_<HHmm>.pdf` (ví dụ: `report_ha-noi_20261104_1030.pdf`).
+
+---
+
 ## [v2026.11.04_09.15] - 2026-11-04
 
 ### Changed

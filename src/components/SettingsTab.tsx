@@ -129,7 +129,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   const [showHistory, setShowHistory] = useState<boolean>(false);
   const [confirmResetDemo, setConfirmResetDemo] = useState<boolean>(false);
 
-  const [reportFilterMemberId, setReportFilterMemberId] = useState<string>('all');
   const [exportingPdf, setExportingPdf] = useState<boolean>(false);
   const [pdfExportError, setPdfExportError] = useState<string>('');
 
@@ -140,9 +139,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
         members,
         categories,
         expenses,
-        filterMemberId: reportFilterMemberId,
       }),
-    [config, members, categories, expenses, reportFilterMemberId]
+    [config, members, categories, expenses]
   );
 
   const handleExportPdfReport = async () => {
@@ -150,10 +148,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
     const isOfflineNow =
       (typeof navigator !== 'undefined' && !navigator.onLine) || simulateOffline;
     if (isOfflineNow) {
-      const offlineMsg =
-        'Cần kết nối Internet để xuất báo cáo PDF. Các chức năng ghi chép và quyết toán vẫn hoạt động Offline bình thường.';
+      const offlineMsg = 'Cần Internet để xuất PDF';
       setPdfExportError(offlineMsg);
-      onShowToast('Cần kết nối Internet để xuất báo cáo PDF');
+      onShowToast(offlineMsg);
       return;
     }
 
@@ -1266,7 +1263,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
         </div>
       )}
 
-      {/* MỤC PHỤ: XUẤT BÁO CÁO CHI TIÊU (PDF QUA CDN, KHÔNG BUNDLE VÀO PWA) */}
+      {/* MỤC PHỤ: XUẤT BÁO CÁO CHI TIÊU (LAZY CHUNK, KHÔNG BUNDLE VÀO PWA PRECACHE) */}
       <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -1275,29 +1272,13 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
               Xuất báo cáo chi tiêu
             </h3>
           </div>
-          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-[11px] font-semibold text-slate-600 shrink-0">
-            PDF • On-demand
-          </span>
-        </div>
-
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <select
-            aria-label="Phạm vi xuất báo cáo chi tiêu"
-            value={reportFilterMemberId}
-            onChange={(e) => setReportFilterMemberId(e.target.value)}
-            className="flex-1 min-w-0 min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold text-slate-800 focus:border-brand"
-          >
-            <option value="all">Toàn bộ chuyến đi ({members.length} thành viên)</option>
-            {members.map((m) => (
-              <option key={m.id} value={m.id}>
-                Theo thành viên: {m.name}
-              </option>
-            ))}
-          </select>
-
           <button
             type="button"
-            disabled={exportingPdf || reportPreview.rows.length === 0}
+            disabled={
+              exportingPdf ||
+              (reportPreview.overview.expenseCount === 0 &&
+                reportPreview.overview.transferCount === 0)
+            }
             onClick={handleExportPdfReport}
             className="min-h-[38px] px-4 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 shrink-0 transition-colors cursor-pointer"
           >
@@ -1328,19 +1309,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
 
         <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
           <span>
-            Bản ghi: <strong className="font-mono text-slate-900">{reportPreview.rows.length}</strong> mục
+            Khoản chi: <strong className="font-mono text-slate-900">{reportPreview.overview.expenseCount}</strong> khoản ({members.length} người)
           </span>
-          {reportPreview.memberSummary ? (
-            <span className="font-mono">
-              Đã chi: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.paidExpense)}</strong>
-              {' · '}
-              Phải chịu: <strong className="text-slate-900">{formatVND(reportPreview.memberSummary.owedExpense)}</strong>
-            </span>
-          ) : (
-            <span className="font-mono">
-              Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.totalExpenseAmount)}</strong>
-            </span>
-          )}
+          <span className="font-mono">
+            Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.overview.totalExpenseAmount)}</strong>
+          </span>
         </div>
       </section>
     </div>

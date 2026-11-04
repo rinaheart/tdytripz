@@ -1,16 +1,13 @@
+import type { jsPDF } from 'jspdf';
+
 /**
  * Hệ thống Render Icon Lucide Vector 100% cho Báo cáo PDF (jsPDF).
  * Sử dụng trực tiếp dữ liệu hình học chuẩn 24x24 từ bộ `lucide-react` của Web App,
  * thông dịch các phần tử SVG (`path`, `circle`, `rect`, `line`, `polyline`) sang lệnh
  * vẽ vector nguyên bản của PDF (`doc.lines`, `doc.circle`, `doc.roundedRect`, `doc.line`).
- *
- * Hỗ trợ nhiều biến thể trình bày (style variants) trên cùng một bộ Lucide:
- * - `plain`: Nét mảnh chuẩn Lucide không khung nền (dùng trên nền header đậm hoặc dòng công thức)
- * - `circle-badge`: Huy hiệu tròn nền pastel + nét Lucide sắc nét
- * - `duotone-circle`: Huy hiệu tròn nền pastel + lớp tô mờ duotone bên trong icon + nét Lucide đậm nét
- * - `rounded-badge`: Huy hiệu vuông bo góc nền pastel + nét Lucide
- * - `solid-badge`: Huy hiệu tròn màu đặc + nét Lucide trắng nổi bật
  */
+
+export type RGB = [number, number, number];
 
 export type LucideIconElement =
   | ['path', { d: string; fillRule?: string }]
@@ -75,6 +72,14 @@ export const LUCIDE_ICON_NODES: Record<string, LucideIconElement[]> = {
     ['path', { d: 'm8 21-4-4 4-4' }],
     ['path', { d: 'M4 17h16' }],
   ],
+  ArrowUpRight: [
+    ['path', { d: 'M7 7h10v10' }],
+    ['path', { d: 'M7 17 17 7' }],
+  ],
+  ArrowDownLeft: [
+    ['path', { d: 'M17 7 7 17' }],
+    ['path', { d: 'M17 17H7V7' }],
+  ],
   Send: [
     [
       'path',
@@ -122,16 +127,16 @@ export const LUCIDE_ICON_NODES: Record<string, LucideIconElement[]> = {
     ['path', { d: 'M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7' }],
   ],
   Hotel: [
-    ['rect', { x: 4, y: 2, width: 16, height: 20, rx: 2 }],
     ['path', { d: 'M10 22v-6.57' }],
+    ['path', { d: 'M12 11h.01' }],
+    ['path', { d: 'M12 7h.01' }],
     ['path', { d: 'M14 15.43V22' }],
     ['path', { d: 'M15 16a5 5 0 0 0-6 0' }],
-    ['path', { d: 'M8 7h.01' }],
-    ['path', { d: 'M12 7h.01' }],
+    ['path', { d: 'M16 11h.01' }],
     ['path', { d: 'M16 7h.01' }],
     ['path', { d: 'M8 11h.01' }],
-    ['path', { d: 'M12 11h.01' }],
-    ['path', { d: 'M16 11h.01' }],
+    ['path', { d: 'M8 7h.01' }],
+    ['rect', { x: 4, y: 2, width: 16, height: 20, rx: 2 }],
   ],
   Bed: [
     ['path', { d: 'M2 4v16' }],
@@ -147,8 +152,8 @@ export const LUCIDE_ICON_NODES: Record<string, LucideIconElement[]> = {
       },
     ],
     ['path', { d: 'M13 5v2' }],
-    ['path', { d: 'M13 11v2' }],
     ['path', { d: 'M13 17v2' }],
+    ['path', { d: 'M13 11v2' }],
   ],
   Package: [
     [
@@ -178,9 +183,9 @@ export const LUCIDE_ICON_NODES: Record<string, LucideIconElement[]> = {
     ['path', { d: 'M8 16H3v5' }],
   ],
   Calculator: [
-    ['rect', { x: 4, y: 2, width: 16, height: 20, rx: 2 }],
-    ['line', { x1: 8, y1: 6, x2: 16, y2: 6 }],
-    ['line', { x1: 16, y1: 14, x2: 16, y2: 18 }],
+    ['rect', { width: 16, height: 20, x: 4, y: 2, rx: 2 }],
+    ['line', { x1: 8, x2: 16, y1: 6, y2: 6 }],
+    ['line', { x1: 16, x2: 16, y1: 14, y2: 18 }],
     ['path', { d: 'M16 10h.01' }],
     ['path', { d: 'M12 10h.01' }],
     ['path', { d: 'M8 10h.01' }],
@@ -190,9 +195,9 @@ export const LUCIDE_ICON_NODES: Record<string, LucideIconElement[]> = {
     ['path', { d: 'M8 18h.01' }],
   ],
   Ellipsis: [
-    ['circle', { cx: 12, cy: 12, r: 1.3 }],
-    ['circle', { cx: 19, cy: 12, r: 1.3 }],
-    ['circle', { cx: 5, cy: 12, r: 1.3 }],
+    ['circle', { cx: 12, cy: 12, r: 1 }],
+    ['circle', { cx: 19, cy: 12, r: 1 }],
+    ['circle', { cx: 5, cy: 12, r: 1 }],
   ],
 };
 
@@ -224,10 +229,6 @@ export interface ParsedSubpath {
   isDot: boolean;
 }
 
-/**
- * Chuyển đổi cung elip SVG (`A rx ry xAxisRotation largeArcFlag sweepFlag x y`)
- * sang tập hợp các điểm đa giác mịn trong không gian 24x24.
- */
 function sampleSvgArc(
   x1: number,
   y1: number,
@@ -314,9 +315,6 @@ function sampleSvgArc(
   return out;
 }
 
-/**
- * Thông dịch chuỗi SVG Path `d` chuẩn của Lucide sang danh sách subpath tọa độ
- */
 export function parseSvgPathToSubpaths(d: string): ParsedSubpath[] {
   const tokenRegex = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)/gi;
   const tokens: string[] = [];
@@ -544,14 +542,7 @@ export function parseSvgPathToSubpaths(d: string): ParsedSubpath[] {
   return subpaths;
 }
 
-/**
- * Pha trộn màu trung gian để tạo lớp tô Duotone nhẹ bên trong icon Lucide
- */
-function blendRgb(
-  fg: [number, number, number],
-  bg: [number, number, number],
-  fgWeight = 0.18
-): [number, number, number] {
+function blendRgb(fg: RGB, bg: RGB, fgWeight = 0.18): RGB {
   return [
     Math.round(fg[0] * fgWeight + bg[0] * (1 - fgWeight)),
     Math.round(fg[1] * fgWeight + bg[1] * (1 - fgWeight)),
@@ -559,32 +550,24 @@ function blendRgb(
   ];
 }
 
-/**
- * Vẽ một icon Lucide 100% Vector vào tài liệu `jsPDF`.
- *
- * @param doc Thực thể jsPDF
- * @param iconName Tên icon Lucide (VD: 'Wallet', 'Users', 'Plane', 'Utensils', 'Hotel', 'Car', 'PieChart', 'Send', 'Calculator'...)
- * @param centerX Tọa độ tâm X (mm)
- * @param centerY Tọa độ tâm Y (mm)
- * @param sizeMm Đường kính tổng thể của badge (hoặc kích thước icon nếu `style: 'plain'`) (mm)
- * @param fgRgb Màu nét chính `[R, G, B]`
- * @param bgRgb Màu nền badge `[R, G, B]` (nếu dùng badge)
- * @param style Kiểu hiển thị (`'duotone-circle' | 'circle-badge' | 'rounded-badge' | 'solid-badge' | 'plain'`)
- */
 export function drawLucideIcon(
-  doc: any,
+  doc: jsPDF,
   iconName: string,
   centerX: number,
   centerY: number,
   sizeMm: number,
-  fgRgb: [number, number, number],
-  bgRgb?: [number, number, number],
+  fgRgb: RGB,
+  bgRgb?: RGB,
   style: LucidePdfStyle = bgRgb ? 'duotone-circle' : 'plain'
 ): void {
   const key = resolveLucideIconKey(iconName);
-  const elements = LUCIDE_ICON_NODES[key] || LUCIDE_ICON_NODES.Package;
+  const rawElements = LUCIDE_ICON_NODES[key] || LUCIDE_ICON_NODES.Package;
+  // Khi vẽ duotone, ưu tiên vẽ rect trước các chấm/đường con bên trong (ví dụ icon Hotel)
+  const elements =
+    style === 'duotone-circle'
+      ? [...rawElements].sort(([a], [b]) => (a === 'rect' ? -1 : b === 'rect' ? 1 : 0))
+      : rawElements;
 
-  // 1. Vẽ nền Badge theo style
   if (style !== 'plain' && bgRgb) {
     doc.setFillColor(bgRgb[0], bgRgb[1], bgRgb[2]);
     if (style === 'rounded-badge') {
@@ -610,7 +593,6 @@ export function drawLucideIcon(
   const isDuotone = style === 'duotone-circle' && Boolean(bgRgb);
   const duotoneFill = bgRgb ? blendRgb(fgRgb, bgRgb, 0.22) : fgRgb;
 
-  // 2. Duyệt từng phần tử SVG chuẩn của Lucide
   for (const [tag, attrs] of elements) {
     doc.setDrawColor(fgRgb[0], fgRgb[1], fgRgb[2]);
     doc.setLineWidth(strokeWidth);
@@ -619,7 +601,7 @@ export function drawLucideIcon(
       const { cx, cy, r } = attrs;
       if (key === 'Ellipsis') {
         doc.setFillColor(fgRgb[0], fgRgb[1], fgRgb[2]);
-        doc.circle(tx(cx), ty(cy), ts(r), 'F');
+        doc.circle(tx(cx), ty(cy), ts(Math.max(1.2, r)), 'F');
       } else if (isDuotone && r >= 3) {
         doc.setFillColor(duotoneFill[0], duotoneFill[1], duotoneFill[2]);
         doc.circle(tx(cx), ty(cy), ts(r), 'FD');

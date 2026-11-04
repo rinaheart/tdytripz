@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tdytime-pwa-v20261101-1430';
+const CACHE_NAME = 'tdytime-pwa-v2026.11.04_09.15';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -58,12 +58,14 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   // Skip Vite dev client, version check endpoint, Google Apps Script API calls,
-  // and Tier C Optional Online-Only features (PDF report engine, Code.gs template, PDF CDN libraries)
+  // and Tier C Optional Online-Only features (PDF report engine, self-hosted PDF fonts, Code.gs template)
   const isTierCOnlineOnly =
     url.pathname.startsWith('/assets/pdfReport-') ||
     url.pathname.startsWith('/assets/gasCode-') ||
-    url.hostname === 'cdn.jsdelivr.net' ||
-    url.hostname === 'cdnjs.cloudflare.com';
+    url.pathname.startsWith('/assets/html2canvas-') ||
+    url.pathname.startsWith('/assets/purify.es-') ||
+    url.pathname.startsWith('/assets/index.es-') ||
+    url.pathname.startsWith('/fonts/');
 
   if (
     isTierCOnlineOnly ||
