@@ -1,5 +1,5 @@
 {
-  "name": "Chia Tiền Nhóm - Hà Nội 3N2Đ",
+  "name": "TdyTripZ - Chia Tiền Nhóm",
   "description": "Ứng dụng quản lý chi tiêu và chia tiền nhóm du lịch/công tác chuẩn số nguyên VND, đồng bộ hai chiều với Google Sheets qua Google Apps Script.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
