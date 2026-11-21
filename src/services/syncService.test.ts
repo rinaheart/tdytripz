@@ -12,10 +12,12 @@ import {
   changeAdminPin,
   enqueueExpenseUpsert,
   fetchArchivedTripByCode,
+  getCurrentUserId,
   getExpenseOwnerId,
   isEquivalentExpensePayload,
   isNonRetryableSyncError,
   isValidGasExecUrl,
+  isViewOnlyUserId,
   listArchivedTrips,
   loadAppState,
   loadSyncQueue,
@@ -28,9 +30,11 @@ import {
   resolveExpenseOwnerMember,
   saveAppState,
   saveSyncQueue,
+  setCurrentUserId,
   setGasUrl,
   setSimulateOffline,
   verifyAdminPin,
+  VIEW_ONLY_USER_ID,
 } from './syncService';
 
 function setupMockBrowserEnv() {
@@ -1018,6 +1022,27 @@ test('Trip Archive & Lookup [Phase 3]: GAS Mode UNKNOWN_ACTION guidance & Code.g
       `${actionName} branch must enforce Admin PIN via verifyPin_(body.adminPin)`
     );
   }
+});
+
+test('View-only mode (Chỉ xem): VIEW_ONLY_USER_ID persists safely and blocks non-admin modifications', () => {
+  setupMockBrowserEnv();
+  setCurrentUserId(VIEW_ONLY_USER_ID);
+  assert.equal(getCurrentUserId(), VIEW_ONLY_USER_ID);
+  assert.equal(isViewOnlyUserId(getCurrentUserId()), true);
+  assert.equal(isViewOnlyUserId('mem_duy'), false);
+  assert.equal(isViewOnlyUserId(null), false);
+
+  const rec = makeExpense({ id: 'exp_vo', createdBy: 'mem_duy', payer: 'mem_duy' });
+  assert.equal(
+    canMemberModifyExpense(rec, VIEW_ONLY_USER_ID, DEFAULT_MEMBERS, false, 'active'),
+    false,
+    'View-only user must never be allowed to modify expenses'
+  );
+  assert.equal(
+    canMemberModifyExpense(rec, VIEW_ONLY_USER_ID, DEFAULT_MEMBERS, true, 'active'),
+    true,
+    'Explicitly unlocked Admin can still modify active trip expenses'
+  );
 });
 
 

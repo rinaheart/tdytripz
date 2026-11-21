@@ -216,7 +216,8 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
           <div className="text-slate-600 font-medium truncate text-right ml-auto">
             <span>Bình quân: </span>
             <strong className="font-mono font-bold text-slate-800 tabular-nums">
-              ~{formatVND(averagePerPerson, false)}/người
+              {totalTripExpense > 0 && totalTripExpense % activeMemberCount === 0 ? '' : '~'}
+              {formatVND(averagePerPerson, false)}/người
             </strong>
           </div>
         </div>

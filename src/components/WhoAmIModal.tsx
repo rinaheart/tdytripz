@@ -1,6 +1,7 @@
 import React from 'react';
-import { Check, UserCheck, X } from 'lucide-react';
+import { Check, Eye, UserCheck, X } from 'lucide-react';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
+import { isViewOnlyUserId, VIEW_ONLY_USER_ID } from '../services/syncService';
 import type { Member } from '../types';
 import { getMemberGroupSize } from '../utils/math';
 import { MemberAvatar } from './MemberAvatar';
@@ -65,6 +66,52 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
         </div>
 
         <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain grid grid-cols-1 gap-2.5">
+          {(() => {
+            const isViewOnlySelected = isViewOnlyUserId(currentUserId);
+            return (
+              <button
+                type="button"
+                aria-pressed={isViewOnlySelected}
+                onClick={() => onSelectMember(VIEW_ONLY_USER_ID)}
+                className={`w-full min-h-[54px] px-4 py-2.5 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                  isViewOnlySelected
+                    ? 'border-2 border-brand bg-brand-soft/60 text-slate-900 shadow-sm shadow-brand/5'
+                    : 'border-dashed border-slate-300 hover:border-slate-400 bg-slate-50/70 text-slate-900 hover:bg-slate-100/70'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    aria-hidden="true"
+                    className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+                      isViewOnlySelected
+                        ? 'bg-brand text-white'
+                        : 'bg-slate-200/80 text-slate-600'
+                    }`}
+                  >
+                    <Eye className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="font-bold text-sm text-slate-900 truncate">Chỉ xem</div>
+                    <div className="text-[11px] text-slate-500">
+                      Theo dõi thu chi, khóa nút thêm để tránh bấm nhầm
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  aria-hidden="true"
+                  className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 ${
+                    isViewOnlySelected ? 'bg-brand text-white' : 'border border-slate-300 bg-white'
+                  }`}
+                >
+                  {isViewOnlySelected && (
+                    <Check aria-hidden="true" className="w-3.5 h-3.5 stroke-[3]" />
+                  )}
+                </div>
+              </button>
+            );
+          })()}
+
           {activeMembers.map((member) => {
             const isSelected = member.id === currentUserId;
             const groupSize = getMemberGroupSize(member);

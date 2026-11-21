@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronDown,
   Download,
+  Eye,
   KeyRound,
   Moon,
   RefreshCw,
@@ -31,6 +32,7 @@ import {
   getGasUrl,
   getSimulateOffline,
   initializeSheetWithCurrentData,
+  isViewOnlyUserId,
   listArchivedTrips,
   loadAppState,
   loadSyncQueue,
@@ -315,18 +317,26 @@ export default function App() {
     return () => clearTimeout(t);
   }, [toastMessage]);
 
+  const isViewOnly = isViewOnlyUserId(currentUserId);
+
   const currentMember = useMemo(
-    () =>
-      appState.members.find((m) => m.id === currentUserId) ||
-      appState.members[0] ||
-      null,
-    [appState.members, currentUserId]
+    () => {
+      if (isViewOnly) return null;
+      return (
+        appState.members.find((m) => m.id === currentUserId) ||
+        appState.members[0] ||
+        null
+      );
+    },
+    [appState.members, currentUserId, isViewOnly]
   );
 
   // Tự động đồng bộ currentUserId nếu danh sách thành viên từ Sheet có bộ ID mới (ví dụ m1..m5 thay vì mem_duy)
+  // Giữ nguyên chế độ "Chỉ xem" (VIEW_ONLY_USER_ID) nếu người dùng đang chọn
   useEffect(() => {
     if (
       currentUserId &&
+      !isViewOnlyUserId(currentUserId) &&
       appState.members.length > 0 &&
       !appState.members.some((m) => m.id === currentUserId)
     ) {
@@ -548,6 +558,10 @@ export default function App() {
     setCurrentUserId(memberId);
     setCurrentUserState(memberId);
     setIsWhoAmIOpen(false);
+    if (isViewOnlyUserId(memberId)) {
+      showToast('Đã chuyển sang chế độ Chỉ xem');
+      return;
+    }
     const found = appState.members.find((m) => m.id === memberId);
     if (found) {
       showToast(`Đã chọn: ${found.name}`);
@@ -747,10 +761,29 @@ export default function App() {
             type="button"
             onClick={() => setIsWhoAmIOpen(true)}
             aria-label="Đổi người dùng"
-            title={currentMember ? `Đang chọn: ${currentMember.name}` : 'Chọn người dùng'}
+            title={
+              isViewOnly
+                ? 'Đang ở chế độ Chỉ xem — Chạm để đổi'
+                : currentMember
+                ? `Đang chọn: ${currentMember.name}`
+                : 'Chọn người dùng'
+            }
             className="min-h-[40px] px-2.5 py-1 -ml-1.5 rounded-xl hover:bg-slate-100 flex items-center gap-2 transition-colors cursor-pointer group"
           >
-            {currentMember ? (
+            {isViewOnly ? (
+              <>
+                <div
+                  aria-hidden="true"
+                  className="w-6 h-6 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 shrink-0"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </div>
+                <span className="text-xs sm:text-sm font-bold text-slate-700 truncate max-w-[180px]">
+                  Chỉ xem
+                </span>
+                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 group-hover:text-slate-600 shrink-0" />
+              </>
+            ) : currentMember ? (
               <>
                 <MemberAvatar member={currentMember} size="sm" />
                 <span className="text-xs sm:text-sm font-bold text-slate-800 truncate max-w-[180px]">
@@ -1019,6 +1052,10 @@ export default function App() {
                 );
                 return;
               }
+              if (isViewOnly) {
+                showToast('Đang ở chế độ Chỉ xem — Chọn tên thành viên để thêm khoản chi.');
+                return;
+              }
               setEditingRecord(null);
               setIsExpenseModalOpen(true);
             }}
@@ -1076,6 +1113,10 @@ export default function App() {
                   );
                   return;
                 }
+                if (isViewOnly) {
+                  showToast('Đang ở chế độ Chỉ xem — Chọn tên thành viên để thêm khoản chi.');
+                  return;
+                }
                 setEditingRecord(null);
                 setIsExpenseModalOpen(true);
               }}
@@ -1131,7 +1172,7 @@ export default function App() {
                 }
                 const res = await archiveAndStartNewTrip(
                   adminPin,
-                  currentUserId || 'admin',
+                  !currentUserId || isViewOnly ? 'admin' : currentUserId,
                   appState,
                   payload
                 );
@@ -1141,6 +1182,7 @@ export default function App() {
                   setSyncQueue([]);
                   if (
                     currentUserId &&
+                    !isViewOnlyUserId(currentUserId) &&
                     !res.nextState.members.some((m) => m.id === currentUserId) &&
                     res.nextState.members.length > 0
                   ) {
@@ -1196,13 +1238,14 @@ export default function App() {
                 setAppState(nextState);
                 if (
                   currentUserId &&
+                  !isViewOnlyUserId(currentUserId) &&
                   !nextMembers.some((m) => m.id === currentUserId)
                 ) {
                   const fallbackId = nextMembers[0]?.id || '';
                   setCurrentUserState(fallbackId);
                   setCurrentUserId(fallbackId);
                 }
-                await syncAdminSettings(adminPin, currentUserId || 'admin', {
+                await syncAdminSettings(adminPin, !currentUserId || isViewOnly ? 'admin' : currentUserId, {
                   members: nextMembers,
                 });
               }}
@@ -1507,11 +1550,23 @@ export default function App() {
             );
             return;
           }
+          if (isViewOnly) {
+            showToast('Đang ở chế độ Chỉ xem — Chọn tên thành viên để thêm khoản chi.');
+            return;
+          }
           setEditingRecord(null);
           setIsExpenseModalOpen(true);
         }}
         pendingSyncCount={syncQueue.length}
         isTripCompleted={isReadOnlyTrip}
+        isAddDisabled={isViewOnly}
+        addDisabledReason={
+          isReadOnlyTrip
+            ? 'Đã khóa chuyến đi'
+            : isViewOnly
+            ? 'Chế độ Chỉ xem — Chọn tên thành viên để thêm khoản chi'
+            : undefined
+        }
       />
     </div>
   );

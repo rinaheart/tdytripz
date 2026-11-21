@@ -17,7 +17,7 @@ import {
   X,
 } from 'lucide-react';
 import { sortCategoriesTailOrder } from '../config';
-import { canMemberModifyExpense } from '../services/syncService';
+import { canMemberModifyExpense, isViewOnlyUserId } from '../services/syncService';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
 import {
   copyToClipboard,
@@ -59,6 +59,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
   onOpenAddModal,
   onShowToast,
 }) => {
+  const isViewOnly = isViewOnlyUserId(currentUserId);
   const [showSearchPanel, setShowSearchPanel] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
@@ -487,7 +488,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
               <span>Xóa bộ lọc</span>
             </button>
           ) : (
-            config.tripStatus !== 'completed' && (
+            config.tripStatus !== 'completed' && !isViewOnly && (
               <button
                 type="button"
                 onClick={onOpenAddModal}
@@ -591,7 +592,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                             >
                               {exp.title}
                             </span>
-                            {!canModify && !exp.deleted && (
+                            {!canModify && !exp.deleted && !isViewOnly && (
                               <Lock
                                 aria-hidden="true"
                                 className="w-3 h-3 mt-1 text-slate-400 shrink-0"
@@ -676,7 +677,7 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                             <span className="text-amber-800 font-sans font-medium">
                               Chuyển riêng
                             </span>
-                          ) : mySplit > 0 ? (
+                          ) : isViewOnly ? null : mySplit > 0 ? (
                             <span className="text-brand font-semibold">
                               {myPerPersonSplit
                                 ? `Bạn: ${myPerPersonSplit.isExact ? '' : '~'}${formatVND(
@@ -692,6 +693,19 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                       </div>
                     </>
                   );
+
+                  if (isViewOnly && !isAdmin) {
+                    return (
+                      <div
+                        key={exp.id}
+                        className={`w-full px-3.5 py-3 flex items-start justify-between gap-3 text-left ${
+                          exp.deleted ? 'bg-rose-50/30 opacity-65' : ''
+                        }`}
+                      >
+                        {rowContent}
+                      </div>
+                    );
+                  }
 
                   return (
                     <button

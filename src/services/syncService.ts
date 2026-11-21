@@ -95,6 +95,12 @@ export function buildShareableTripUrl(gasUrl: string): string {
   return url.toString();
 }
 
+export const VIEW_ONLY_USER_ID = '__VIEW_ONLY__';
+
+export function isViewOnlyUserId(userId: string | null | undefined): boolean {
+  return userId === VIEW_ONLY_USER_ID;
+}
+
 export function getCurrentUserId(): string | null {
   return localStorage.getItem(STORAGE_KEYS.USER_ID);
 }
@@ -259,7 +265,7 @@ export function canMemberModifyExpense(
   if (tripStatus === 'completed') return false;
   if (isAdmin) return true;
   if (record.deleted) return false;
-  if (!currentUserId) return false;
+  if (!currentUserId || isViewOnlyUserId(currentUserId)) return false;
 
   const ownerId = getExpenseOwnerId(record);
   if (!ownerId) return false;

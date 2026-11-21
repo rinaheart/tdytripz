@@ -9,6 +9,8 @@ interface NavbarProps {
   onOpenAddModal: () => void;
   pendingSyncCount: number;
   isTripCompleted: boolean;
+  isAddDisabled?: boolean;
+  addDisabledReason?: string;
 }
 
 export const Navbar: React.FC<NavbarProps> = React.memo(({
@@ -17,7 +19,12 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
   onOpenAddModal,
   pendingSyncCount,
   isTripCompleted,
+  isAddDisabled = false,
+  addDisabledReason,
 }) => {
+  const disableAdd = isTripCompleted || isAddDisabled;
+  const addButtonTitle =
+    addDisabledReason || (isTripCompleted ? 'Đã khóa chuyến đi' : 'Thêm khoản chi');
   const tabs: { id: ActiveTab; label: string; icon: React.FC<{ className?: string }> }[] = [
     { id: 'overview', label: 'Tổng quan', icon: LayoutGrid },
     { id: 'expenses', label: 'Chi tiêu', icon: ReceiptText },
@@ -65,13 +72,13 @@ export const Navbar: React.FC<NavbarProps> = React.memo(({
           <button
             type="button"
             onClick={onOpenAddModal}
-            disabled={isTripCompleted}
+            disabled={disableAdd}
             aria-label="Thêm khoản chi"
-            title={isTripCompleted ? 'Đã khóa chuyến đi' : 'Thêm khoản chi'}
-            className={`w-14 h-13 sm:w-15 sm:h-14 -mt-3.5 rounded-2xl ring-4 ring-white flex items-center justify-center transition-all active:scale-95 touch-manipulation cursor-pointer ${
-              isTripCompleted
+            title={addButtonTitle}
+            className={`w-14 h-13 sm:w-15 sm:h-14 -mt-3.5 rounded-2xl ring-4 ring-white flex items-center justify-center transition-all touch-manipulation ${
+              disableAdd
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
-                : 'bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/30'
+                : 'bg-brand hover:bg-brand-hover text-white shadow-lg shadow-brand/30 active:scale-95 cursor-pointer'
             }`}
           >
             <Plus aria-hidden="true" className="w-7 h-7 stroke-[2.8]" />
