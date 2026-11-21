@@ -166,13 +166,14 @@ export function renderSettlementHero(
 
     const afterReceiveBadgeX = receiveBadgeX + doc.getTextWidth(receiveAmountStr);
 
-    // Bên phải Header: STK in đúng 1 lần (đo trước để tránh chồng chữ ghi chú)
+    // Bên phải Header: STK + tên ngân hàng + chủ tài khoản in đúng 1 lần (đo trước để tránh chồng chữ ghi chú)
     let bankReservedW = 0;
-    if (grp.bankInfo) {
+    const fullBankLabel = [grp.bankInfo, grp.accountHolder].filter(Boolean).join(' · ');
+    if (fullBankLabel) {
       doc.setFont(activeFont, 'bold');
-      doc.setFontSize(8.2);
+      doc.setFontSize(7.8);
       doc.setTextColor(...COLOR_INK);
-      const bankStr = fitText(doc, grp.bankInfo, 66);
+      const bankStr = fitText(doc, fullBankLabel, 78);
       bankReservedW = doc.getTextWidth(bankStr) + 4.0;
       doc.text(bankStr, MARGIN_X + CONTENT_WIDTH - 4.0, headerBaselineY, {
         align: 'right',

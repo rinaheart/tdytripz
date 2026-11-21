@@ -606,10 +606,11 @@ test('formatSettlementReportForChat - xuất quyết toán ngắn gọn & đầy
 
   assert.equal(compactReport.includes('\u00A0'), false, 'Không chứa ký tự NBSP khi dán Zalo');
   assert.match(compactReport, /📊 QUYẾT TOÁN: Team Building - Đà Lạt \(20–22\/11\/2026\)/);
-  assert.match(compactReport, /Tổng chi: 1\.200\.000 ₫ \(1 khoản · 12 người · ~100\.000 ₫\/người\)/);
-  assert.match(compactReport, /💸 CẦN CHUYỂN \(Tối giản · 2 khoản\):/);
+  // 1.200.000 chia hết cho 12 -> không có dấu ~
+  assert.match(compactReport, /Tổng chi: 1\.200\.000 ₫ \(1 khoản · 12 người · 100\.000 ₫\/người\)/);
+  assert.match(compactReport, /💸 CẦN CHUYỂN \(Tối giản · 2 dòng thanh toán\):/);
   assert.match(compactReport, /10 thành viên → Duy: 100\.000 ₫\/người \(tổng 10 người: 1\.000\.000 ₫\)/);
-  assert.match(compactReport, /🏦 STK NHẬN TIỀN:\n• Duy: 00123456 \(MB\) - NGUYEN DUY/);
+  assert.match(compactReport, /🏦 STK NHẬN TIỀN:\n• Duy: 00123456 · MB · NGUYEN DUY/);
   // Dù có 2 khoản chuyển cho Duy, STK của Duy chỉ xuất hiện đúng 1 lần
   assert.equal(compactReport.match(/00123456/g)?.length, 1);
   assert.equal(compactReport.includes('📌 TÓM TẮT THU CHI'), false);
@@ -692,13 +693,14 @@ test('formatSettlementReportForChat - xuất quyết toán ngắn gọn & đầy
   // Ngày 1 hôm hiển thị gọn 20/11/2026 thay vì 20–20/11/2026
   assert.match(realFullReport, /📊 QUYẾT TOÁN: Liên hoan 20\.11\.2026 - Nếp \(Huế\) \(20\/11\/2026\)/);
   assert.equal(realFullReport.includes('20–20/11/2026'), false);
-  assert.match(realFullReport, /Tổng chi: 5\.352\.000 ₫ \(3 khoản · 12 người · ~446\.000 ₫\/người\)/);
-  assert.match(realFullReport, /Đã chuyển trước: 600\.000 ₫ \(2 giao dịch\)/);
-  // Diễn giải rõ Đã nhận / Đã CK thay vì dấu +/- dễ hiểu nhầm
-  assert.match(realFullReport, /• Duy: Chi 980\.000 · Chịu 457\.213 · Đã nhận 600\.000 → Trả 77\.213/);
-  assert.match(realFullReport, /• Hòa: Chi 3\.872\.000 · Chịu 457\.213 · Đã CK 400\.000 → Nhận 3\.814\.787/);
-  assert.match(realFullReport, /• Loan: Chi 0 · Chịu 322\.666 · Đã CK 200\.000 → Trả 122\.666/);
-  // STK Hòa chỉ liệt kê đúng 1 lần dù nhận từ 3 khoản chuyển
+  // 5.352.000 chia hết cho 12 -> 446.000 ₫/người (không có dấu ~)
+  assert.match(realFullReport, /Tổng chi: 5\.352\.000 ₫ \(3 khoản · 12 người · 446\.000 ₫\/người\)/);
+  assert.match(realFullReport, /Đã chuyển trước: 600\.000 ₫ \(2 giao dịch\)\n• Hòa → Duy: 400\.000 ₫\n• Loan → Duy: 200\.000 ₫/);
+  // Diễn giải rõ người chuyển / người nhận trong tóm tắt thu chi
+  assert.match(realFullReport, /• Duy: Chi 980\.000 · Chịu 457\.213 · Đã nhận trước 600\.000 \(Hòa, Loan\) → Trả 77\.213/);
+  assert.match(realFullReport, /• Hòa: Chi 3\.872\.000 · Chịu 457\.213 · Đã chuyển cho Duy: 400\.000 → Nhận 3\.814\.787/);
+  assert.match(realFullReport, /• Loan: Chi 0 · Chịu 322\.666 · Đã chuyển cho Duy: 200\.000 → Trả 122\.666/);
+  // STK Hòa chỉ liệt kê đúng 1 lần dù nhận từ 3 dòng thanh toán
   assert.equal(realFullReport.match(/190388889999/g)?.length, 1);
 
   // Trường hợp không có khoản nợ nào (cân bằng)
@@ -712,6 +714,101 @@ test('formatSettlementReportForChat - xuất quyết toán ngắn gọn & đầy
   });
   assert.match(emptyReport, /✅ CẦN CHUYỂN: Không có khoản nợ nào/);
 });
+
+test('Audit chia đều nhiều hóa đơn (5.352.000 / 12 = 446.000) - triệt tiêu hoàn toàn sai lệch cộng dồn ±1–2đ', () => {
+  const members12: Member[] = [
+    { id: 'm_g8', name: '8 thành viên', avatarColor: '#5b21b6', defaultWeight: 8, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'm_duy', name: 'Duy', avatarColor: '#000777', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'm_duc', name: 'Đức', avatarColor: '#1e40af', defaultWeight: 1, bankName: 'VCB', accountNo: '0123456789', accountHolder: 'TRAN DUC', active: true },
+    { id: 'm_hoa', name: 'Hòa', avatarColor: '#92400e', defaultWeight: 1, bankName: 'TCB', accountNo: '190388889999', accountHolder: 'LE HOA', active: true },
+    { id: 'm_loan', name: 'Loan', avatarColor: '#9f1239', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+  ];
+  const weights = { m_g8: 8, m_duy: 1, m_duc: 1, m_hoa: 1, m_loan: 1 };
+  const allIds = Object.keys(weights);
+
+  // 1. Test đơn lẻ 5.352.000 / 12 -> 0 số dư
+  const singleSplit = splitEqualWeighted(5352000, allIds, weights, 'single_5352k');
+  assert.equal(singleSplit.m_g8, 3568000);
+  assert.equal(singleSplit.m_duy, 446000);
+  assert.equal(singleSplit.m_duc, 446000);
+  assert.equal(singleSplit.m_hoa, 446000);
+  assert.equal(singleSplit.m_loan, 446000);
+  assert.equal(
+    Object.values(singleSplit).reduce((s, v) => s + v, 0),
+    5352000
+  );
+
+  // 2. Test 3 hóa đơn riêng lẻ không chia hết cho 12 (500k + 980k + 3.872k = 5.352.000)
+  // Trước khi fix: cộng dồn splits đã làm tròn tạo lệch 3.567.999 / 446.001 / 445.999
+  // Sau khi fix: tích lũy phân số hữu tỉ trả về chuẩn 446.000đ/người, dư = 0
+  const expenses3: ExpenseRecord[] = [
+    {
+      id: 'exp_500k', rev: 1, type: 'expense', title: 'Phí cọc VIP', amount: 500000, payer: 'm_duc',
+      splits: splitEqualWeighted(500000, allIds, weights, 'exp_500k'),
+      splitMode: 'equal', categoryId: 'cat_other', spentAt: '2026-11-18 20:33',
+      createdBy: 'm_duy', createdAt: '2026-11-18 20:33:00', updatedBy: 'm_duy', updatedAt: '2026-11-18 20:33:00', deleted: false, note: '',
+    },
+    {
+      id: 'exp_980k', rev: 1, type: 'expense', title: 'Setup quà', amount: 980000, payer: 'm_duy',
+      splits: splitEqualWeighted(980000, allIds, weights, 'exp_980k'),
+      splitMode: 'equal', categoryId: 'cat_other', spentAt: '2026-11-20 17:30',
+      createdBy: 'm_duy', createdAt: '2026-11-20 17:30:00', updatedBy: 'm_duy', updatedAt: '2026-11-20 17:30:00', deleted: false, note: '',
+    },
+    {
+      id: 'exp_3872k', rev: 1, type: 'expense', title: 'Nhà hàng Nếp', amount: 3872000, payer: 'm_hoa',
+      splits: splitEqualWeighted(3872000, allIds, weights, 'exp_3872k'),
+      splitMode: 'equal', categoryId: 'cat_food', spentAt: '2026-11-20 21:00',
+      createdBy: 'm_duy', createdAt: '2026-11-20 21:00:00', updatedBy: 'm_duy', updatedAt: '2026-11-20 21:00:00', deleted: false, note: '',
+    },
+    {
+      id: 'tr_hoa_duy', rev: 1, type: 'transfer', title: 'Hòa chuyển Duy', amount: 400000, payer: 'm_hoa',
+      splits: { m_duy: 400000 }, splitMode: 'exact', categoryId: 'cat_other', spentAt: '2026-11-19 15:30',
+      createdBy: 'm_duy', createdAt: '2026-11-19 15:30:00', updatedBy: 'm_duy', updatedAt: '2026-11-19 15:30:00', deleted: false, note: '',
+    },
+    {
+      id: 'tr_loan_duy', rev: 1, type: 'transfer', title: 'Loan chuyển Duy', amount: 200000, payer: 'm_loan',
+      splits: { m_duy: 200000 }, splitMode: 'exact', categoryId: 'cat_other', spentAt: '2026-11-19 15:00',
+      createdBy: 'm_duy', createdAt: '2026-11-19 15:00:00', updatedBy: 'm_duy', updatedAt: '2026-11-19 15:00:00', deleted: false, note: '',
+    },
+  ];
+
+  const balances = calculateBalances(members12, expenses3);
+  const byId = new Map(balances.map((b) => [b.memberId, b]));
+
+  assert.equal(byId.get('m_g8')!.owedExpense, 3568000);
+  assert.equal(byId.get('m_duy')!.owedExpense, 446000);
+  assert.equal(byId.get('m_duc')!.owedExpense, 446000);
+  assert.equal(byId.get('m_hoa')!.owedExpense, 446000);
+  assert.equal(byId.get('m_loan')!.owedExpense, 446000);
+  assert.equal(
+    balances.reduce((s, b) => s + b.owedExpense, 0),
+    5352000
+  );
+  assert.equal(
+    balances.reduce((s, b) => s + b.balance, 0),
+    0
+  );
+
+  // Số dư ròng khớp từng đồng với báo cáo audit
+  assert.equal(byId.get('m_g8')!.balance, -3568000);
+  assert.equal(byId.get('m_duy')!.balance, -66000);
+  assert.equal(byId.get('m_duc')!.balance, 54000);
+  assert.equal(byId.get('m_hoa')!.balance, 3826000);
+  assert.equal(byId.get('m_loan')!.balance, -246000);
+
+  // Quyết toán tối giản khớp đúng 3.880.000đ
+  const debts = simplifyDebts(balances);
+  assert.equal(debts.length, 4);
+  assert.equal(
+    debts.reduce((s, tx) => s + tx.amount, 0),
+    3880000
+  );
+  assert.equal(debts.find((d) => d.fromMemberId === 'm_g8' && d.toMemberId === 'm_hoa')!.amount, 3568000);
+  assert.equal(debts.find((d) => d.fromMemberId === 'm_loan' && d.toMemberId === 'm_hoa')!.amount, 246000);
+  assert.equal(debts.find((d) => d.fromMemberId === 'm_duy' && d.toMemberId === 'm_duc')!.amount, 54000);
+  assert.equal(debts.find((d) => d.fromMemberId === 'm_duy' && d.toMemberId === 'm_hoa')!.amount, 12000);
+});
+
 
 
 

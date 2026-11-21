@@ -119,6 +119,7 @@ export interface SettlementRecipientGroup {
   toName: string;
   toAvatarColor: string;
   bankInfo: string;
+  accountHolder: string;
   total: number;
   receivedTransferAmount: number;
   sentTransferAmount: number;
@@ -773,11 +774,13 @@ export function buildExpenseReportData(params: {
   const recipientGroupMap = new Map<string, SettlementRecipientGroup>();
   for (const debt of simplifiedDebts) {
     const recBalance = enrichedBalances.find((b) => b.memberId === debt.toMemberId);
+    const recMember = memberMap.get(debt.toMemberId);
     const existing = recipientGroupMap.get(debt.toMemberId) || {
       toMemberId: debt.toMemberId,
       toName: debt.toMemberName,
       toAvatarColor: debt.toAvatarColor,
       bankInfo: debt.toBankInfo,
+      accountHolder: (recMember?.accountHolder || '').trim(),
       total: 0,
       receivedTransferAmount: recBalance?.receivedTransfer || 0,
       sentTransferAmount: recBalance?.sentTransfer || 0,

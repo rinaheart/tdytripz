@@ -805,9 +805,11 @@ test('11. Audit dữ liệu thực tế từ tdytripz.vercel.app (Liên hoan 20.
   );
 
   // 2. Per-creditor netTransfer chính xác tuyệt đối: Hòa (+400.000 đã CK trước), Đức (0)
+  // Với cộng dồn phân số chính xác: Duy = Đức = Hòa = 457.212 (1.480k/11 + 3.872k/12 = 457.212,1212...)
+  // Hòa nhận lại chính xác: 3.872.000 - 457.212 + 400.000 = 3.814.788
   const hoaGrp = report.settlementGroups.find((g) => g.toName === 'Hòa')!;
   const ducGrp = report.settlementGroups.find((g) => g.toName === 'Đức')!;
-  assert.equal(hoaGrp.total, 3814787);
+  assert.equal(hoaGrp.total, 3814788);
   assert.equal(hoaGrp.netTransfer, 400000);
   assert.equal(hoaGrp.receivedTransferAmount, 0);
   assert.equal(ducGrp.total, 42788);

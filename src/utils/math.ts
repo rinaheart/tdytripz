@@ -248,9 +248,116 @@ export function validateExactSplits(
   };
 }
 
+function gcdBigInt(a: bigint, b: bigint): bigint {
+  let x = a < 0n ? -a : a;
+  let y = b < 0n ? -b : b;
+  while (y !== 0n) {
+    const t = x % y;
+    x = y;
+    y = t;
+  }
+  return x === 0n ? 1n : x;
+}
+
+interface Rational {
+  num: bigint;
+  den: bigint;
+}
+
+function addRational(a: Rational, b: Rational): Rational {
+  if (b.num === 0n) return a;
+  if (a.num === 0n) return b;
+  if (a.den === b.den) {
+    const num = a.num + b.num;
+    const g = gcdBigInt(num, a.den);
+    return { num: num / g, den: a.den / g };
+  }
+  const num = a.num * b.den + b.num * a.den;
+  const den = a.den * b.den;
+  const g = gcdBigInt(num, den);
+  return { num: num / g, den: den / g };
+}
+
+function combineDenMap(denMap: Map<number, bigint> | undefined): Rational {
+  let acc: Rational = { num: 0n, den: 1n };
+  if (!denMap) return acc;
+  for (const [den, num] of denMap.entries()) {
+    if (num === 0n) continue;
+    const denBig = BigInt(den);
+    const g = gcdBigInt(num, denBig);
+    acc = addRational(acc, { num: num / g, den: denBig / g });
+  }
+  return acc;
+}
+
+/**
+ * Kiểm tra khoản chi có khớp tỉ lệ chia hữu tỉ chuẩn (equal hoặc shares) hay không
+ * (sai lệch mỗi phần đã lưu <= 1đ so với giá trị lý thuyết).
+ * Trả về danh sách trọng số để tích lũy phân số chính xác tuyệt đối, tránh cộng dồn sai số làm tròn 1–2đ qua nhiều hóa đơn.
+ */
+function resolveExactRationalWeights(
+  exp: ExpenseRecord,
+  effectivePaid: number,
+  memberMap: Map<string, Member>
+): { entries: Array<[string, number]>; totalWeight: number } | null {
+  if (exp.type === 'transfer' || effectivePaid <= 0) return null;
+  const splitsObj = exp.splits || {};
+  const positiveEntries: Array<[string, number]> = [];
+  for (const [id, rawAmt] of Object.entries(splitsObj)) {
+    const amt = Math.round(rawAmt || 0);
+    if (amt > 0) {
+      positiveEntries.push([id, amt]);
+    }
+  }
+  if (positiveEntries.length === 0) return null;
+
+  if (exp.splitMode === 'equal') {
+    let totalWeight = 0;
+    const weighted: Array<[string, number]> = [];
+    for (const [id] of positiveEntries) {
+      const w = getMemberGroupSize(memberMap.get(id));
+      weighted.push([id, w]);
+      totalWeight += w;
+    }
+    if (totalWeight <= 0) return null;
+    for (let i = 0; i < positiveEntries.length; i++) {
+      const savedAmt = positiveEntries[i][1];
+      const exactAmt = (effectivePaid * weighted[i][1]) / totalWeight;
+      if (Math.abs(savedAmt - exactAmt) > 1.000001) {
+        return null;
+      }
+    }
+    return { entries: weighted, totalWeight };
+  }
+
+  if (exp.splitMode === 'shares' && exp.splitMeta?.shares) {
+    let totalWeight = 0;
+    const weighted: Array<[string, number]> = [];
+    for (const [id] of positiveEntries) {
+      const w = Math.max(0, Math.round(exp.splitMeta.shares[id] || 0));
+      if (w <= 0) return null;
+      weighted.push([id, w]);
+      totalWeight += w;
+    }
+    if (totalWeight <= 0) return null;
+    for (let i = 0; i < positiveEntries.length; i++) {
+      const savedAmt = positiveEntries[i][1];
+      const exactAmt = (effectivePaid * weighted[i][1]) / totalWeight;
+      if (Math.abs(savedAmt - exactAmt) > 1.000001) {
+        return null;
+      }
+    }
+    return { entries: weighted, totalWeight };
+  }
+
+  return null;
+}
+
 /**
  * Tính toán Số dư ròng (balance) cho từng thành viên.
- * Luôn đọc trực tiếp từ trường `splits` đã lưu, chỉ tính các bản ghi `deleted === false`.
+ * Tích lũy chính xác theo phân số hữu tỉ cho các khoản chia đều / chia suất (equal, shares)
+ * và chỉ áp dụng Largest Remainder đúng 1 lần ở cấp quyết toán để loại bỏ hoàn toàn sai lệch ±1–2đ
+ * khi tổng chi phí chia hết cho số thành viên.
  * Công thức:
  * balance(u) = Đã chi (Expense) - Phải chịu (Expense splits) + Đã chuyển đi (Transfer) - Đã nhận về (Transfer)
  */
@@ -259,8 +366,11 @@ export function calculateBalances(
   expenses: ExpenseRecord[]
 ): MemberBalance[] {
   const map = new Map<string, MemberBalance>();
+  const memberMap = new Map<string, Member>();
+  const owedByDenMap = new Map<string, Map<number, bigint>>();
 
   for (const m of members) {
+    memberMap.set(m.id, m);
     map.set(m.id, {
       memberId: m.id,
       paidExpense: 0,
@@ -289,6 +399,18 @@ export function calculateBalances(
     return entry;
   };
 
+  const addOwedTerm = (memberId: string, den: number, numeratorDelta: bigint) => {
+    ensureMember(memberId);
+    let dm = owedByDenMap.get(memberId);
+    if (!dm) {
+      dm = new Map<number, bigint>();
+      owedByDenMap.set(memberId, dm);
+    }
+    dm.set(den, (dm.get(den) || 0n) + numeratorDelta);
+  };
+
+  let totalExpenseAmount = 0;
+
   for (const exp of expenses) {
     if (exp.deleted) continue;
 
@@ -311,18 +433,70 @@ export function calculateBalances(
       const payerEntry = ensureMember(exp.payer);
       payerEntry.paidExpense += effectivePaid;
 
-      for (const [participantId, rawAmt] of Object.entries(splitsObj)) {
-        const amt = Math.round(rawAmt || 0);
-        if (amt > 0) {
-          const partEntry = ensureMember(participantId);
-          partEntry.owedExpense += amt;
+      const rational = resolveExactRationalWeights(exp, effectivePaid, memberMap);
+      if (rational) {
+        totalExpenseAmount += effectivePaid;
+        const paidBig = BigInt(effectivePaid);
+        for (const [participantId, weight] of rational.entries) {
+          addOwedTerm(participantId, rational.totalWeight, paidBig * BigInt(weight));
+        }
+      } else {
+        for (const [participantId, rawAmt] of Object.entries(splitsObj)) {
+          const amt = Math.round(rawAmt || 0);
+          if (amt > 0) {
+            totalExpenseAmount += amt;
+            addOwedTerm(participantId, 1, BigInt(amt));
+          }
         }
       }
     }
   }
 
+  // Áp dụng Largest Remainder chính xác bằng phân số BigInt đúng 1 lần trên toàn bộ chuyến đi
+  const owedEntries: Array<{
+    memberId: string;
+    floorVal: number;
+    remNum: bigint;
+    remDen: bigint;
+  }> = [];
+
+  let allocatedFloors = 0;
+  for (const memberId of map.keys()) {
+    const rational = combineDenMap(owedByDenMap.get(memberId));
+    const floorVal = Number(rational.num / rational.den);
+    const remNum = rational.num % rational.den;
+    allocatedFloors += floorVal;
+    owedEntries.push({
+      memberId,
+      floorVal,
+      remNum,
+      remDen: rational.den,
+    });
+  }
+
+  const leftover = totalExpenseAmount - allocatedFloors;
+  const finalOwed = new Map<string, number>();
+  for (const item of owedEntries) {
+    finalOwed.set(item.memberId, item.floorVal);
+  }
+
+  if (leftover > 0) {
+    const ranked = [...owedEntries]
+      .filter((item) => item.remNum > 0n)
+      .sort((a, b) => {
+        const diff = b.remNum * a.remDen - a.remNum * b.remDen;
+        if (diff !== 0n) return diff > 0n ? 1 : -1;
+        return a.memberId.localeCompare(b.memberId);
+      });
+    for (let i = 0; i < leftover && i < ranked.length; i++) {
+      const id = ranked[i].memberId;
+      finalOwed.set(id, (finalOwed.get(id) || 0) + 1);
+    }
+  }
+
   const results: MemberBalance[] = [];
   for (const entry of map.values()) {
+    entry.owedExpense = finalOwed.get(entry.memberId) || 0;
     entry.netTransfer = entry.sentTransfer - entry.receivedTransfer;
     entry.balance =
       entry.paidExpense - entry.owedExpense + entry.sentTransfer - entry.receivedTransfer;
@@ -380,11 +554,17 @@ export function simplifyDebts(balances: MemberBalance[]): DebtTransaction[] {
 /**
  * Tính công nợ trực tiếp đôi một giữa từng cặp thành viên (Pairwise Debts).
  * Nếu A nợ B 200k và B nợ A 50k -> bù trừ trực tiếp thành A cần chuyển B 150k.
+ * Tích lũy theo phân số hữu tỉ chính xác giữa cùng một cặp để triệt tiêu sai lệch cộng dồn ±1đ.
  */
 export function calculatePairwiseDebts(
   members: Member[],
   expenses: ExpenseRecord[]
 ): DebtTransaction[] {
+  const memberMap = new Map<string, Member>();
+  for (const m of members) {
+    memberMap.set(m.id, m);
+  }
+
   const memberIds = Array.from(
     new Set([
       ...members.map((m) => m.id),
@@ -392,14 +572,18 @@ export function calculatePairwiseDebts(
     ])
   ).sort();
 
-  // owed[from][to] = tổng số tiền `from` nợ `to`
-  const owed: Record<string, Record<string, number>> = {};
-  for (const a of memberIds) {
-    owed[a] = {};
-    for (const b of memberIds) {
-      owed[a][b] = 0;
+  // owedMap[from][to] = Map<den, numeratorSum>
+  const owedMap = new Map<string, Map<number, bigint>>();
+  const addPairTerm = (from: string, to: string, den: number, numDelta: bigint) => {
+    if (from === to || numDelta === 0n) return;
+    const key = `${from}\u0000${to}`;
+    let dm = owedMap.get(key);
+    if (!dm) {
+      dm = new Map<number, bigint>();
+      owedMap.set(key, dm);
     }
-  }
+    dm.set(den, (dm.get(den) || 0n) + numDelta);
+  };
 
   for (const exp of expenses) {
     if (exp.deleted) continue;
@@ -407,11 +591,23 @@ export function calculatePairwiseDebts(
     const splitsObj = exp.splits || {};
 
     if (exp.type === 'expense') {
-      // Người tham gia nợ người trả tiền (payer)
-      for (const [participantId, rawAmt] of Object.entries(splitsObj)) {
-        const amt = Math.round(rawAmt || 0);
-        if (amt > 0 && participantId !== payer) {
-          owed[participantId][payer] = (owed[participantId][payer] || 0) + amt;
+      const splitSum = Object.values(splitsObj).reduce((acc, v) => acc + Math.round(v || 0), 0);
+      const effectivePaid = splitSum > 0 ? splitSum : Math.round(exp.amount || 0);
+      const rational = resolveExactRationalWeights(exp, effectivePaid, memberMap);
+
+      if (rational) {
+        const paidBig = BigInt(effectivePaid);
+        for (const [participantId, weight] of rational.entries) {
+          if (participantId !== payer) {
+            addPairTerm(participantId, payer, rational.totalWeight, paidBig * BigInt(weight));
+          }
+        }
+      } else {
+        for (const [participantId, rawAmt] of Object.entries(splitsObj)) {
+          const amt = Math.round(rawAmt || 0);
+          if (amt > 0 && participantId !== payer) {
+            addPairTerm(participantId, payer, 1, BigInt(amt));
+          }
         }
       }
     } else if (exp.type === 'transfer') {
@@ -419,32 +615,45 @@ export function calculatePairwiseDebts(
       for (const [recipientId, rawAmt] of Object.entries(splitsObj)) {
         const amt = Math.round(rawAmt || 0);
         if (amt > 0 && recipientId !== payer) {
-          owed[recipientId][payer] = (owed[recipientId][payer] || 0) + amt;
+          addPairTerm(recipientId, payer, 1, BigInt(amt));
         }
       }
     }
   }
+
+  const roundPositiveRational = (r: Rational): number => {
+    if (r.num <= 0n) return 0;
+    const q = r.num / r.den;
+    const rem = r.num % r.den;
+    return Number(rem * 2n >= r.den ? q + 1n : q);
+  };
 
   const pairwiseTransactions: DebtTransaction[] = [];
   for (let i = 0; i < memberIds.length; i++) {
     for (let j = i + 1; j < memberIds.length; j++) {
       const a = memberIds[i];
       const b = memberIds[j];
-      const aOwesB = owed[a]?.[b] || 0;
-      const bOwesA = owed[b]?.[a] || 0;
-      const net = aOwesB - bOwesA;
-      if (net > 0) {
-        pairwiseTransactions.push({
-          fromMemberId: a,
-          toMemberId: b,
-          amount: net,
-        });
-      } else if (net < 0) {
-        pairwiseTransactions.push({
-          fromMemberId: b,
-          toMemberId: a,
-          amount: -net,
-        });
+      const aOwesB = combineDenMap(owedMap.get(`${a}\u0000${b}`));
+      const bOwesA = combineDenMap(owedMap.get(`${b}\u0000${a}`));
+      const net = addRational(aOwesB, { num: -bOwesA.num, den: bOwesA.den });
+      if (net.num > 0n) {
+        const amt = roundPositiveRational(net);
+        if (amt > 0) {
+          pairwiseTransactions.push({
+            fromMemberId: a,
+            toMemberId: b,
+            amount: amt,
+          });
+        }
+      } else if (net.num < 0n) {
+        const amt = roundPositiveRational({ num: -net.num, den: net.den });
+        if (amt > 0) {
+          pairwiseTransactions.push({
+            fromMemberId: b,
+            toMemberId: a,
+            amount: amt,
+          });
+        }
       }
     }
   }

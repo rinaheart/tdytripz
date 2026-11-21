@@ -274,7 +274,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
         <div className="px-0.5 flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-brand">
             <Play aria-hidden="true" className="w-3 h-3 fill-current" />
-            <span>CẦN CHUYỂN ({activeTransactions.length} KHOẢN)</span>
+            <span>CẦN CHUYỂN ({activeTransactions.length} DÒNG)</span>
           </div>
 
           <div className="grid grid-cols-2 p-0.5 bg-slate-200/70 rounded-xl shrink-0">
@@ -369,19 +369,6 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
                           </strong>
                         </div>
                       )}
-                      <div className="text-xs font-mono text-slate-600 truncate">
-                        {cleanAccountNo ? (
-                          <>
-                            <span className="text-slate-500">STK nhận: </span>
-                            <strong className="text-slate-900 select-all">{cleanAccountNo}</strong>
-                            {recipient.bankName ? (
-                              <span className="text-slate-500"> ({recipient.bankName})</span>
-                            ) : null}
-                          </>
-                        ) : (
-                          <span className="text-slate-400 italic font-sans">Chưa cập nhật STK</span>
-                        )}
-                      </div>
                     </div>
 
                     <div className="text-right shrink-0">
@@ -412,6 +399,25 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
                         </span>
                       )}
                     </div>
+                  </div>
+
+                  <div className="text-xs font-mono text-slate-600 leading-snug break-words">
+                    {cleanAccountNo ? (
+                      <>
+                        <span className="text-slate-500 font-sans">STK nhận: </span>
+                        <strong className="text-slate-900 select-all">{cleanAccountNo}</strong>
+                        {(recipient.bankName || recipient.accountHolder) ? (
+                          <span className="text-slate-500 font-sans">
+                            {' · '}
+                            {[recipient.bankName?.trim(), recipient.accountHolder?.trim()]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="text-slate-400 italic font-sans">Chưa cập nhật STK</span>
+                    )}
                   </div>
 
                   {/* Chỉ duy nhất 2 nút Copy tinh gọn: STK (raw string giữ số 0 đầu) & Số tiền (raw integer) */}

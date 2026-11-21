@@ -587,11 +587,53 @@ export function formatSettlementReportForChat(params: {
   const totalTransfer = activeTransfers.reduce((sum, e) => sum + Math.round(e.amount || 0), 0);
   const headcount = getTotalHeadcount(members);
   const avgPerPerson = headcount > 0 ? Math.round(totalExpense / headcount) : 0;
+  const isAvgExact = headcount > 0 && totalExpense % headcount === 0;
 
   const memberMap = new Map<string, Member>();
   for (const m of members) {
     memberMap.set(m.id, m);
   }
+  const resolveMemberName = (id: string): string => memberMap.get(id)?.name || id || 'Không rõ';
+
+  // Tổng hợp các giao dịch chuyển trước theo cặp (Người chuyển -> Người nhận) để hiển thị minh bạch
+  const transferPairsMap = new Map<string, { fromId: string; toId: string; amount: number }>();
+  const sentTransfersByMember = new Map<string, Map<string, number>>();
+  const receivedTransfersByMember = new Map<string, Map<string, number>>();
+
+  for (const tr of activeTransfers) {
+    const fromId = tr.payer;
+    const splitEntries = Object.entries(tr.splits || {}).filter(
+      ([, val]) => Math.round(val || 0) > 0
+    );
+    for (const [toId, rawAmt] of splitEntries) {
+      const amt = Math.round(rawAmt || 0);
+      if (amt <= 0) continue;
+      const pairKey = `${fromId}\u0000${toId}`;
+      const existingPair = transferPairsMap.get(pairKey) || { fromId, toId, amount: 0 };
+      existingPair.amount += amt;
+      transferPairsMap.set(pairKey, existingPair);
+
+      let sentMap = sentTransfersByMember.get(fromId);
+      if (!sentMap) {
+        sentMap = new Map<string, number>();
+        sentTransfersByMember.set(fromId, sentMap);
+      }
+      sentMap.set(toId, (sentMap.get(toId) || 0) + amt);
+
+      let recMap = receivedTransfersByMember.get(toId);
+      if (!recMap) {
+        recMap = new Map<string, number>();
+        receivedTransfersByMember.set(toId, recMap);
+      }
+      recMap.set(fromId, (recMap.get(fromId) || 0) + amt);
+    }
+  }
+
+  const transferPairs = Array.from(transferPairsMap.values()).sort(
+    (a, b) =>
+      b.amount - a.amount ||
+      resolveMemberName(a.fromId).localeCompare(resolveMemberName(b.fromId), 'vi')
+  );
 
   const tripTitle = (config?.tripName || 'Quyết toán nhóm').trim();
   const location = (config?.location || '').trim();
@@ -617,7 +659,7 @@ export function formatSettlementReportForChat(params: {
 
   const metaParts: string[] = [`${activeExpenses.length} khoản`, `${headcount} người`];
   if (headcount > 0 && totalExpense > 0) {
-    metaParts.push(`~${formatChatVND(avgPerPerson, true)}/người`);
+    metaParts.push(`${isAvgExact ? '' : '~'}${formatChatVND(avgPerPerson, true)}/người`);
   }
   lines.push(`Tổng chi: ${formatChatVND(totalExpense, true)} (${metaParts.join(' · ')})`);
 
@@ -625,6 +667,11 @@ export function formatSettlementReportForChat(params: {
     lines.push(
       `Đã chuyển trước: ${formatChatVND(totalTransfer, true)} (${activeTransfers.length} giao dịch)`
     );
+    for (const pair of transferPairs) {
+      lines.push(
+        `• ${resolveMemberName(pair.fromId)} → ${resolveMemberName(pair.toId)}: ${formatChatVND(pair.amount, true)}`
+      );
+    }
   }
 
   lines.push('');
@@ -635,7 +682,7 @@ export function formatSettlementReportForChat(params: {
   if (transactions.length === 0) {
     lines.push('✅ CẦN CHUYỂN: Không có khoản nợ nào (đã cân bằng).');
   } else {
-    lines.push(`💸 CẦN CHUYỂN (${modeLabel} · ${transactions.length} khoản):`);
+    lines.push(`💸 CẦN CHUYỂN (${modeLabel} · ${transactions.length} dòng thanh toán):`);
     transactions.forEach((tx, idx) => {
       const sender = memberMap.get(tx.fromMemberId);
       const recipient = memberMap.get(tx.toMemberId);
@@ -670,13 +717,12 @@ export function formatSettlementReportForChat(params: {
         const cleanAccountNo = String(recipient.accountNo || '')
           .replace(/\s+/g, '')
           .replace(/^'+/, '');
+        const cleanBank = String(recipient.bankName || '').trim();
+        const cleanHolder = String(recipient.accountHolder || '').trim();
         if (cleanAccountNo) {
           seenRecipientIds.add(recipient.id);
-          const bankSuffix = recipient.bankName ? ` (${recipient.bankName.trim()})` : '';
-          const holderSuffix = recipient.accountHolder ? ` - ${recipient.accountHolder.trim()}` : '';
-          recipientBankLines.push(
-            `• ${recipient.name}: ${cleanAccountNo}${bankSuffix}${holderSuffix}`
-          );
+          const bankParts = [cleanAccountNo, cleanBank, cleanHolder].filter(Boolean);
+          recipientBankLines.push(`• ${recipient.name}: ${bankParts.join(' · ')}`);
         }
       }
     });
@@ -695,6 +741,46 @@ export function formatSettlementReportForChat(params: {
       return nameA.localeCompare(nameB, 'vi');
     });
 
+    const formatMemberTransferNote = (row: MemberBalance): string => {
+      const sentMap = sentTransfersByMember.get(row.memberId);
+      const recMap = receivedTransfersByMember.get(row.memberId);
+      const sentEntries = sentMap ? Array.from(sentMap.entries()).sort((a, b) => b[1] - a[1]) : [];
+      const recEntries = recMap ? Array.from(recMap.entries()).sort((a, b) => b[1] - a[1]) : [];
+
+      const parts: string[] = [];
+      if (sentEntries.length === 1) {
+        parts.push(
+          `Đã chuyển cho ${resolveMemberName(sentEntries[0][0])}: ${formatChatVND(sentEntries[0][1], false)}`
+        );
+      } else if (sentEntries.length > 1) {
+        const list = sentEntries
+          .map(([id, amt]) => `${resolveMemberName(id)} (${formatChatVND(amt, false)})`)
+          .join(', ');
+        parts.push(`Đã chuyển cho ${list}`);
+      }
+
+      if (recEntries.length === 1) {
+        parts.push(
+          `Đã nhận từ ${resolveMemberName(recEntries[0][0])}: ${formatChatVND(recEntries[0][1], false)}`
+        );
+      } else if (recEntries.length > 1) {
+        const names = recEntries.map(([id]) => resolveMemberName(id)).join(', ');
+        const totalRec = recEntries.reduce((sum, [, amt]) => sum + amt, 0);
+        parts.push(`Đã nhận trước ${formatChatVND(totalRec, false)} (${names})`);
+      }
+
+      if (parts.length > 0) {
+        return ` · ${parts.join(' · ')}`;
+      }
+      if (row.netTransfer > 0) {
+        return ` · Đã chuyển trước: ${formatChatVND(row.netTransfer, false)}`;
+      }
+      if (row.netTransfer < 0) {
+        return ` · Đã nhận trước: ${formatChatVND(Math.abs(row.netTransfer), false)}`;
+      }
+      return '';
+    };
+
     if (sortedBalances.length > 0) {
       lines.push('');
       lines.push('📌 TÓM TẮT THU CHI (₫):');
@@ -704,12 +790,7 @@ export function formatSettlementReportForChat(params: {
         const groupSize = getMemberGroupSize(member);
         const paidStr = formatChatVND(row.paidExpense, false);
         const owedStr = formatChatVND(row.owedExpense, false);
-        const transferPart =
-          row.netTransfer > 0
-            ? ` · Đã CK ${formatChatVND(row.netTransfer, false)}`
-            : row.netTransfer < 0
-              ? ` · Đã nhận ${formatChatVND(Math.abs(row.netTransfer), false)}`
-              : '';
+        const transferPart = formatMemberTransferNote(row);
 
         if (groupSize > 1) {
           const owedSplit = splitPerGroupMember(row.owedExpense, groupSize);
