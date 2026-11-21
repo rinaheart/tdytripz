@@ -141,7 +141,7 @@ function drawSingleMemberCard(
     const arrowW = doc.getTextWidth('→  ');
     let curX = x + 3.4 + arrowW;
 
-    card.payTo.slice(0, 2).forEach((target, idx) => {
+    card.payTo.filter((_, idx) => idx < 2).forEach((target, idx) => {
       if (idx > 0) {
         doc.setFont(activeFont, 'normal');
         doc.setFontSize(FONT_CAPTION);
@@ -214,65 +214,101 @@ function drawSingleMemberCard(
     doc.setFont(activeFont, 'normal');
     doc.setFontSize(FONT_CAPTION);
     doc.setTextColor(...COLOR_MUTED);
-    doc.text(m.label, mx, y + 27.6);
+    doc.text(m.label, mx, y + 27.8);
 
     doc.setFont(activeFont, 'bold');
-    doc.setFontSize(7.8);
+    doc.setFontSize(8.0);
     doc.setTextColor(...COLOR_INK);
-    doc.text(fitText(doc, m.value, metricColW - 1.5), mx, y + 31.6);
+    doc.text(fitText(doc, m.value, metricColW - 1.5), mx, y + 32.0);
   });
 
-  // 5. Thanh stacked mỏng 100% thể hiện "Phải chịu theo hạng mục"
-  const barLabelY = y + 36.8;
-  doc.setFont(activeFont, 'normal');
-  doc.setFontSize(FONT_CAPTION);
-  doc.setTextColor(...COLOR_MUTED);
-  doc.text('Phải chịu theo hạng mục', x + 3.4, barLabelY);
-
-  if (card.byCategory.length > 0) {
-    const topCatsSummary = card.byCategory
-      .slice(0, 2)
-      .map((c) => `${c.categoryName} ${c.percentage}%`)
-      .join(' • ');
-    doc.setFont(activeFont, 'bold');
-    doc.setFontSize(FONT_CAPTION);
-    doc.setTextColor(...COLOR_SLATE);
-    doc.text(
-      fitText(doc, topCatsSummary, innerW - 36),
-      x + width - 3.4,
-      barLabelY,
-      { align: 'right' }
-    );
-  }
-
+  // 5. Thanh stacked 100% tự nói (cao 5.4mm, in trực tiếp % cỡ 7.0pt lên các đoạn >= 8%)
   const barX = x + 3.4;
-  const barY = y + 38.6;
-  const barH = 2.6;
+  const barY = y + 35.8;
+  const barH = 5.4;
+  const barRadius = 1.5;
   doc.setFillColor(...COLOR_TRACK);
-  doc.roundedRect(barX, barY, innerW, barH, 1.1, 1.1, 'F');
+  doc.roundedRect(barX, barY, innerW, barH, barRadius, barRadius, 'F');
 
-  if (card.byCategory.length > 0) {
+  const nonZeroCats = card.byCategory.filter((c) => c.percentage > 0);
+  if (nonZeroCats.length > 0) {
     let segX = barX;
-    card.byCategory.forEach((cat, idx) => {
-      if (cat.percentage <= 0) return;
-      const isLast = idx === card.byCategory.length - 1;
+    const segments: Array<{
+      x: number;
+      w: number;
+      pct: number;
+      barColor: RGB;
+    }> = [];
+
+    nonZeroCats.forEach((cat, idx) => {
+      const isLast = idx === nonZeroCats.length - 1;
       const segW = isLast
         ? Math.max(0, barX + innerW - segX)
         : (innerW * cat.percentage) / 100;
       if (segW <= 0) return;
 
       const theme = resolveCategoryTheme(cat.categoryIcon);
-      doc.setFillColor(theme.bar[0], theme.bar[1], theme.bar[2]);
-      if (card.byCategory.length === 1) {
-        doc.roundedRect(segX, barY, segW, barH, 1.1, 1.1, 'F');
-      } else if (idx === 0) {
-        doc.roundedRect(segX, barY, Math.min(innerW, segW + 1.0), barH, 1.1, 1.1, 'F');
-      } else if (isLast) {
-        doc.roundedRect(Math.max(barX, segX - 0.8), barY, segW + 0.8, barH, 1.1, 1.1, 'F');
-      } else {
-        doc.rect(segX, barY, segW, barH, 'F');
-      }
+      segments.push({
+        x: segX,
+        w: segW,
+        pct: cat.percentage,
+        barColor: theme.bar,
+      });
       segX += segW;
+    });
+
+    segments.forEach((seg, idx) => {
+      const isFirst = idx === 0;
+      const isLast = idx === segments.length - 1;
+      doc.setFillColor(seg.barColor[0], seg.barColor[1], seg.barColor[2]);
+
+      if (segments.length === 1) {
+        doc.roundedRect(seg.x, barY, seg.w, barH, barRadius, barRadius, 'F');
+      } else if (isFirst) {
+        doc.roundedRect(
+          seg.x,
+          barY,
+          Math.min(innerW, seg.w + barRadius),
+          barH,
+          barRadius,
+          barRadius,
+          'F'
+        );
+      } else if (isLast) {
+        doc.roundedRect(
+          Math.max(barX, seg.x - barRadius),
+          barY,
+          seg.w + barRadius,
+          barH,
+          barRadius,
+          barRadius,
+          'F'
+        );
+        doc.rect(seg.x, barY, Math.min(seg.w, barRadius + 0.2), barH, 'F');
+      } else {
+        doc.rect(seg.x, barY, seg.w, barH, 'F');
+      }
+    });
+
+    // Vạch trắng phân tách giữa các đoạn và nhãn % (cỡ 7.0pt đậm) cho các đoạn >= 8%
+    segments.forEach((seg, idx) => {
+      if (idx > 0) {
+        doc.setDrawColor(255, 255, 255);
+        doc.setLineWidth(0.4);
+        doc.line(seg.x, barY, seg.x, barY + barH);
+      }
+
+      if (seg.pct >= 8) {
+        const pctLabel = `${seg.pct}%`;
+        doc.setFont(activeFont, 'bold');
+        doc.setFontSize(FONT_CAPTION); // 7.0pt >= 7pt
+        if (doc.getTextWidth(pctLabel) + 1.2 <= seg.w) {
+          doc.setTextColor(255, 255, 255);
+          doc.text(pctLabel, seg.x + seg.w / 2, barY + barH / 2 + 0.85, {
+            align: 'center',
+          });
+        }
+      }
     });
   }
 }
@@ -339,7 +375,7 @@ function drawCategoryLegendBar(
 }
 
 /**
- * Trang cuối: Phụ lục thẻ cá nhân (lưới 2 cột, ~89×46mm mỗi thẻ, <= 10 người vừa 1 trang).
+ * Trang cuối: Phụ lục thẻ cá nhân (lưới 2 cột, ~89×45,5mm mỗi thẻ, <= 10 người vừa 1 trang).
  * Chú giải màu và icon hạng mục ghi 1 lần ở cuối trang.
  */
 export function renderMemberCardsSection(
@@ -356,23 +392,23 @@ export function renderMemberCardsSection(
 
   let cursorY = MARGIN_TOP;
 
-  // Tiêu đề trang phụ lục thẻ cá nhân
-  doc.setFont(activeFont, 'bold');
-  doc.setFontSize(FONT_SECTION_TITLE + 0.6);
-  doc.setTextColor(...COLOR_INK);
-  doc.text('PHỤ LỤC QUYẾT TOÁN CÁ NHÂN', MARGIN_X, cursorY + 3.2);
-
-  doc.setFont(activeFont, 'normal');
-  doc.setFontSize(FONT_CAPTION);
-  doc.setTextColor(...COLOR_MUTED);
-  doc.text(
-    `${report.memberCards.length} thành viên • Đối soát trực tiếp với khối quyết toán`,
-    MARGIN_X + CONTENT_WIDTH,
-    cursorY + 3.2,
-    { align: 'right' }
+  // Tiêu đề trang phụ lục thẻ cá nhân (1 dòng gọn có icon, bỏ câu "Đối soát trực tiếp với khối quyết toán")
+  drawLucideIcon(
+    doc,
+    'Users',
+    MARGIN_X + 2.2,
+    cursorY + 2.1,
+    4.2,
+    [13, 148, 136],
+    [204, 251, 241],
+    'rounded-badge'
   );
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(FONT_SECTION_TITLE + 0.8);
+  doc.setTextColor(...COLOR_INK);
+  doc.text('PHỤ LỤC QUYẾT TOÁN CÁ NHÂN', MARGIN_X + 5.4, cursorY + 3.3);
 
-  cursorY += 6.2;
+  cursorY += 6.0;
 
   const cards = report.memberCards;
   const totalRows = Math.ceil(cards.length / 2);

@@ -34,8 +34,25 @@ export function renderSettlementHero(
   report: ExpenseReportData,
   cursorY: number
 ): number {
-  let y = cursorY;
+  let y = ensurePageSpace(doc, cursorY, 24.0);
   const groups = report.settlementGroups;
+
+  // Tiêu đề mục 1 dòng có icon: "Quyết toán"
+  drawLucideIcon(
+    doc,
+    'CheckCircle2',
+    MARGIN_X + 2.2,
+    y + 2.1,
+    4.2,
+    COLOR_TEAL_DARK,
+    [204, 251, 241],
+    'rounded-badge'
+  );
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(9.2);
+  doc.setTextColor(...COLOR_INK);
+  doc.text('Quyết toán', MARGIN_X + 5.4, y + 3.3);
+  y += 5.2;
 
   if (groups.length === 0) {
     const emptyH = 14.0;

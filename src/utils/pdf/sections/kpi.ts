@@ -58,7 +58,7 @@ export function renderKpiRow(
     {
       label: 'Bình quân/người',
       value: `${formatVND(report.overview.averagePerMember, false)} ₫`,
-      subtext: `Chia đều ${report.overview.memberCount} người`,
+      subtext: report.overview.averageSubtext,
       iconName: 'Users',
       accentColor: [26, 98, 232],
       surfaceColor: [235, 243, 254],

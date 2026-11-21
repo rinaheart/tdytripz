@@ -75,7 +75,7 @@
 
 ## 3. Cài đặt & Phát triển (Local Development)
 
-**Yêu cầu:** Node.js `>= 18.x`
+**Yêu cầu:** Node.js `>= 26.0.0` (LTS)
 
 ```bash
 # 1. Cài đặt dependencies

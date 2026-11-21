@@ -11,6 +11,7 @@ import {
 import {
   findDuplicateExpenseOnSameDay,
   formatCompactVND,
+  formatExpensesForChat,
   formatVND,
   normalizeSearchText,
   readVietnameseNumber,
@@ -290,5 +291,98 @@ test('findDuplicateExpenseOnSameDay - phát hiện khoản chi trùng Tiêu đ�
   });
   assert.equal(selfEdit, null);
 });
+
+test('formatExpensesForChat - tạo chuỗi văn bản định dạng gọn đẹp để dán Zalo/Messenger', () => {
+  const tripConfig = {
+    tripName: 'Hội nghị YHDP 2026',
+    startDate: '2026-10-23',
+    endDate: '2026-10-25',
+  };
+
+  // Danh sách rỗng hoặc toàn bộ đã xóa -> trả về chuỗi rỗng
+  assert.equal(
+    formatExpensesForChat({
+      config: tripConfig,
+      expenses: [
+        {
+          id: 'del_1',
+          type: 'expense',
+          title: 'Khoản đã xóa',
+          amount: 50000,
+          payer: 'm1',
+          splits: { m1: 50000 },
+          spentAt: '2026-10-23 09:00',
+          deleted: true,
+        },
+      ],
+      members: mockMembers,
+    }),
+    ''
+  );
+
+  // Danh sách nhiều ngày gồm trước chuyến, ngày trong chuyến, chuyển khoản và bản ghi đã xóa
+  const output = formatExpensesForChat({
+    config: tripConfig,
+    members: mockMembers,
+    filterSummary: 'Người chi: Duy',
+    expenses: [
+      {
+        id: 'e_trip_late',
+        type: 'expense',
+        title: 'Ăn tối Hải sản',
+        amount: 450000,
+        payer: 'm1',
+        splits: { m1: 150000, m2: 150000, m3: 150000 },
+        spentAt: '2026-10-23 19:30',
+      },
+      {
+        id: 'e_pre',
+        type: 'expense',
+        title: 'Vé máy bay khứ hồi',
+        amount: 2500000,
+        payer: 'm1',
+        splits: { m1: 2500000 },
+        spentAt: '2026-10-15 10:00',
+      },
+      {
+        id: 'e_transfer',
+        type: 'transfer',
+        title: 'Dương ứng trước cho Duy',
+        amount: 500000,
+        payer: 'm2',
+        splits: { m1: 500000 },
+        spentAt: '2026-10-23 20:00',
+      },
+      {
+        id: 'e_deleted',
+        type: 'expense',
+        title: 'Khoản nhập nhầm',
+        amount: 999000,
+        payer: 'm3',
+        splits: { m3: 999000 },
+        spentAt: '2026-10-23 12:00',
+        deleted: true,
+      },
+    ],
+  });
+
+  const lines = output.split('\n');
+  assert.equal(lines[0], '📋 Hội nghị YHDP 2026 (23–25/10/2026)');
+  assert.equal(lines[1], 'Bộ lọc: Người chi: Duy');
+  assert.equal(
+    lines[2],
+    `Tổng chi: ${formatVND(2950000, true)} (2 khoản) • Chuyển tiền: ${formatVND(500000, true)} (1 giao dịch)`
+  );
+  assert.ok(output.includes(`▸ Trước chuyến đi (${formatVND(2500000, true)})`));
+  assert.ok(output.includes(`• Vé máy bay khứ hồi - ${formatVND(2500000, true)} - Duy`));
+  assert.ok(output.includes(`▸ Thứ Sáu, 23/10 · Ngày 1 (${formatVND(450000, true)})`));
+  assert.ok(output.includes(`• Ăn tối Hải sản - ${formatVND(450000, true)} - Duy`));
+  assert.ok(output.includes(`• Dương ứng trước cho Duy - ${formatVND(500000, true)} - Dương → Duy`));
+  assert.ok(!output.includes('Khoản nhập nhầm'));
+
+  // Đảm bảo nhóm Trước chuyến đi xuất hiện trước Ngày 1
+  assert.ok(output.indexOf('Trước chuyến đi') < output.indexOf('Ngày 1'));
+});
+
 
 

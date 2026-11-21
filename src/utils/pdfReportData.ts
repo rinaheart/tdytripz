@@ -7,7 +7,13 @@ import type {
   SplitMode,
   TripConfig,
 } from '../types';
-import { formatDateRangeVN, formatShortDateVN, formatVND, getNowGMT7 } from './format';
+import {
+  formatCompactVND,
+  formatDateRangeVN,
+  formatShortDateVN,
+  formatVND,
+  getNowGMT7,
+} from './format';
 import { calculateBalances, simplifyDebts } from './math';
 
 export type DayBucketKind = 'pre' | 'trip' | 'post' | 'unknown';
@@ -15,6 +21,7 @@ export type DayBucketKind = 'pre' | 'trip' | 'post' | 'unknown';
 export interface DayBucket {
   key: string;
   label: string;
+  shortLabel: string;
   kind: DayBucketKind;
 }
 
@@ -140,6 +147,9 @@ export interface ExpenseReportOverview {
   memberCount: number;
   tripDays: number;
   averagePerMember: number;
+  minOwedExpense: number;
+  maxOwedExpense: number;
+  averageSubtext: string;
   topPayer: TopPayerSummary | null;
   byCategory: ReportCategoryBreakdown[];
   byDay: ReportDayBreakdown[];
@@ -168,6 +178,32 @@ export interface ExpenseReportData {
 }
 
 const WEEKDAYS_VN = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy'];
+
+/**
+ * Định dạng dòng phụ (subtext) dưới KPI "Bình quân/người":
+ * - Nếu mọi thành viên chịu mức bằng nhau (`min === max`): `${memberCount} thành viên`
+ * - Nếu có chênh lệch (`min !== max`): `${min}–${max} tr/người` (ví dụ `4,29–4,70 tr/người`)
+ */
+export function formatOwedRangeSubtext(owedAmounts: number[], memberCount: number): string {
+  if (memberCount <= 0 || owedAmounts.length === 0) {
+    return '0 thành viên';
+  }
+  const clean = owedAmounts.map((v) => Math.max(0, Math.round(v || 0)));
+  const minOwed = Math.min(...clean);
+  const maxOwed = Math.max(...clean);
+
+  if (minOwed === maxOwed) {
+    return `${memberCount} thành viên`;
+  }
+
+  if (maxOwed >= 1_000_000) {
+    const fmtMil = (v: number): string =>
+      (v / 1_000_000).toFixed(v % 1_000_000 === 0 ? 0 : 2).replace('.', ',');
+    return `${fmtMil(minOwed)}–${fmtMil(maxOwed)} tr/người`;
+  }
+
+  return `${formatCompactVND(minOwed)}–${formatCompactVND(maxOwed)}/người`;
+}
 
 /**
  * Phân bổ tỷ lệ phần trăm số nguyên theo thuật toán Largest Remainder (tổng luôn bằng 100 khi có dữ liệu > 0)
@@ -207,7 +243,9 @@ export function allocatePercentages(values: number[]): number[] {
 /**
  * Phân nhóm ngày cho biểu đồ "Theo ngày" và "Sổ chi tiết":
  * - Trước chuyến (`dateKey < startDate`): gộp chung 1 nhóm `PRE_TRIP` ("Trước chuyến")
- * - Trong chuyến (`startDate <= dateKey <= endDate`): `Thứ Sáu 22/10 · Ngày 1`
+ * - Trong chuyến (`startDate <= dateKey <= endDate`):
+ *   - `label` (dùng cho Sổ chi tiết trang 2): `Thứ Năm 22/10 · Ngày 1`
+ *   - `shortLabel` (dùng cho biểu đồ Theo ngày trang 1): `Ngày 1 · 22/10`
  * - Sau chuyến (`dateKey > endDate`): gộp nhóm `POST_TRIP` ("Sau chuyến")
  */
 export function getDayBucket(
@@ -215,20 +253,35 @@ export function getDayBucket(
   startDate?: string,
   endDate?: string
 ): DayBucket {
-  const cleanDate = (dateKey || '').trim().slice(0, 10);
+  const cleanDate = (dateKey || '').trim().substring(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(cleanDate)) {
-    return { key: 'UNKNOWN', label: 'Chưa rõ ngày', kind: 'unknown' };
+    return {
+      key: 'UNKNOWN',
+      label: 'Chưa rõ ngày',
+      shortLabel: 'Chưa rõ ngày',
+      kind: 'unknown',
+    };
   }
 
-  const cleanStart = (startDate || '').trim().slice(0, 10);
-  const cleanEnd = (endDate || '').trim().slice(0, 10);
+  const cleanStart = (startDate || '').trim().substring(0, 10);
+  const cleanEnd = (endDate || '').trim().substring(0, 10);
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStart) && cleanDate < cleanStart) {
-    return { key: 'PRE_TRIP', label: 'Trước chuyến', kind: 'pre' };
+    return {
+      key: 'PRE_TRIP',
+      label: 'Trước chuyến',
+      shortLabel: 'Trước chuyến',
+      kind: 'pre',
+    };
   }
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(cleanEnd) && cleanDate > cleanEnd) {
-    return { key: 'POST_TRIP', label: 'Sau chuyến', kind: 'post' };
+    return {
+      key: 'POST_TRIP',
+      label: 'Sau chuyến',
+      shortLabel: 'Sau chuyến',
+      kind: 'post',
+    };
   }
 
   const [y, m, d] = cleanDate.split('-').map(Number);
@@ -244,6 +297,7 @@ export function getDayBucket(
       return {
         key: cleanDate,
         label: `${weekday} ${ddmm} · Ngày ${diffDays}`,
+        shortLabel: `Ngày ${diffDays} · ${ddmm}`,
         kind: 'trip',
       };
     }
@@ -252,6 +306,7 @@ export function getDayBucket(
   return {
     key: cleanDate,
     label: `${weekday} ${ddmm}`,
+    shortLabel: ddmm,
     kind: 'trip',
   };
 }
@@ -259,8 +314,8 @@ export function getDayBucket(
 export function formatSpentAtReportVN(spentAt: string): string {
   if (!spentAt) return '';
   const clean = spentAt.trim();
-  const datePart = clean.slice(0, 10);
-  const timePart = clean.length >= 16 ? clean.slice(11, 16) : '';
+  const datePart = clean.substring(0, 10);
+  const timePart = clean.length >= 16 ? clean.substring(11, 16) : '';
   const shortDate = formatShortDateVN(datePart);
   return timePart ? `${shortDate} ${timePart}` : shortDate;
 }
@@ -426,8 +481,8 @@ function computeTripDays(
   endDate?: string,
   fallbackDayCount = 1
 ): number {
-  const s = (startDate || '').trim().slice(0, 10);
-  const e = (endDate || '').trim().slice(0, 10);
+  const s = (startDate || '').trim().substring(0, 10);
+  const e = (endDate || '').trim().substring(0, 10);
   if (/^\d{4}-\d{2}-\d{2}$/.test(s) && /^\d{4}-\d{2}-\d{2}$/.test(e)) {
     const startMs = Date.parse(`${s}T00:00:00Z`);
     const endMs = Date.parse(`${e}T00:00:00Z`);
@@ -491,9 +546,10 @@ export function buildExpenseReportData(params: {
   for (const rec of allActiveRecords) {
     const effAmount = getEffectiveRecordAmount(rec);
     const rawSpent = (rec.spentAt || '').trim();
-    const dateKey = rawSpent.slice(0, 10) || 'unknown';
-    const timePart = rawSpent.length >= 16 ? rawSpent.slice(11, 16) : '';
-    const ddmm = /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? formatShortDateVN(dateKey).slice(0, 5) : '';
+    const dateKey = rawSpent.substring(0, 10) || 'unknown';
+    const timePart = rawSpent.length >= 16 ? rawSpent.substring(11, 16) : '';
+    const ddmm =
+      /^\d{4}-\d{2}-\d{2}$/.test(dateKey) ? formatShortDateVN(dateKey).substring(0, 5) : '';
     const bucket = getDayBucket(dateKey, config.startDate, config.endDate);
 
     const rowTime =
@@ -589,7 +645,7 @@ export function buildExpenseReportData(params: {
       catAgg.set(catId, curCat);
 
       const curDay = dayAgg.get(bucket.key) || {
-        label: bucket.label,
+        label: bucket.shortLabel,
         kind: bucket.kind,
         sortKey: bucketSortKey(bucket),
         amount: 0,
@@ -649,6 +705,11 @@ export function buildExpenseReportData(params: {
       bankInfo: formatMemberBankInfo(m),
     };
   });
+
+  const owedAmounts = enrichedBalances.map((b) => b.owedExpense);
+  const minOwedExpense = owedAmounts.length > 0 ? Math.min(...owedAmounts) : 0;
+  const maxOwedExpense = owedAmounts.length > 0 ? Math.max(...owedAmounts) : 0;
+  const averageSubtext = formatOwedRangeSubtext(owedAmounts, memberCount);
 
   const simplifiedDebts: EnrichedDebtTransaction[] = simplifyDebts(rawBalances).map((d) => {
     const fromM = memberMap.get(d.fromMemberId);
@@ -810,6 +871,9 @@ export function buildExpenseReportData(params: {
       memberCount,
       tripDays: tripDaysCount,
       averagePerMember,
+      minOwedExpense,
+      maxOwedExpense,
+      averageSubtext,
       topPayer,
       byCategory,
       byDay,

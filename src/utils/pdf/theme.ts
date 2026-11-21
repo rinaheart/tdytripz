@@ -73,7 +73,7 @@ export const CATEGORY_THEME_MAP: Record<string, CategoryTheme> = {
     lucideIcon: 'Utensils',
     stroke: [224, 124, 14],
     bg: [254, 234, 202],
-    bar: [242, 146, 29],
+    bar: [230, 126, 12],
     text: [217, 119, 6],
   },
   Hotel: {
@@ -108,7 +108,7 @@ export const CATEGORY_THEME_MAP: Record<string, CategoryTheme> = {
     lucideIcon: 'Ellipsis',
     stroke: [64, 82, 104],
     bg: [222, 230, 238],
-    bar: [13, 148, 136],
+    bar: [71, 85, 105],
     text: [64, 82, 104],
   },
 };
@@ -129,9 +129,9 @@ export const DAY_BAR_PALETTE: RGB[] = [
 export function hexToRgb(hex: string, fallback: RGB = [0, 7, 119]): RGB {
   const clean = (hex || '').replace('#', '').trim();
   if (clean.length === 6) {
-    const r = parseInt(clean.slice(0, 2), 16);
-    const g = parseInt(clean.slice(2, 4), 16);
-    const b = parseInt(clean.slice(4, 6), 16);
+    const r = parseInt(clean.substring(0, 2), 16);
+    const g = parseInt(clean.substring(2, 4), 16);
+    const b = parseInt(clean.substring(4, 6), 16);
     if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
       return [r, g, b];
     }

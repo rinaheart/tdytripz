@@ -3,8 +3,10 @@ import {
   AlertTriangle,
   ArrowRight,
   ArrowRightLeft,
+  Check,
   ChevronDown,
   Clock,
+  Copy,
   Lock,
   Package,
   Play,
@@ -17,7 +19,13 @@ import {
 import { sortCategoriesTailOrder } from '../config';
 import { canMemberModifyExpense } from '../services/syncService';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
-import { formatDayGroupHeader, formatVND, normalizeSearchText } from '../utils/format';
+import {
+  copyToClipboard,
+  formatDayGroupHeader,
+  formatExpensesForChat,
+  formatVND,
+  normalizeSearchText,
+} from '../utils/format';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
 
 interface ExpensesTabProps {
@@ -31,6 +39,7 @@ interface ExpensesTabProps {
   onRequestAdminUnlock?: (record: ExpenseRecord) => void;
   onSoftDeleteRecord: (record: ExpenseRecord) => void;
   onOpenAddModal: () => void;
+  onShowToast?: (msg: string) => void;
 }
 
 export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
@@ -43,13 +52,24 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
   onEditRecord,
   onRequestAdminUnlock,
   onOpenAddModal,
+  onShowToast,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [memberFilter, setMemberFilter] = useState<string>('all');
   const [showDeleted, setShowDeleted] = useState<boolean>(false);
   const [visibleLimit, setVisibleLimit] = useState<number>(100);
+  const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     setVisibleLimit(100);
@@ -197,10 +217,56 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
   const hasActiveFilter =
     searchQuery.trim() !== '' || categoryFilter !== 'all' || memberFilter !== 'all';
 
+  const copyableExpenses = useMemo(
+    () => filteredExpenses.filter((e) => !e.deleted),
+    [filteredExpenses]
+  );
+
   const resetFilters = () => {
     setSearchQuery('');
     setCategoryFilter('all');
     setMemberFilter('all');
+  };
+
+  const handleCopyExpensesSummary = async () => {
+    if (copyableExpenses.length === 0) {
+      onShowToast?.('Chưa có khoản chi nào để sao chép');
+      return;
+    }
+
+    const filterParts: string[] = [];
+    if (categoryFilter === '__transfer__') {
+      filterParts.push('Chuyển tiền');
+    } else if (categoryFilter !== 'all') {
+      const catName = categoryMap.get(categoryFilter)?.name;
+      if (catName) filterParts.push(catName);
+    }
+    if (memberFilter !== 'all') {
+      const memName = memberMap.get(memberFilter)?.name;
+      if (memName) filterParts.push(`Người chi: ${memName}`);
+    }
+    if (searchQuery.trim()) {
+      filterParts.push(`"${searchQuery.trim()}"`);
+    }
+
+    const formattedText = formatExpensesForChat({
+      config,
+      expenses: copyableExpenses,
+      members,
+      filterSummary: filterParts.join(' · '),
+    });
+
+    const ok = await copyToClipboard(formattedText);
+    if (ok) {
+      setCopiedSummary(true);
+      onShowToast?.(`Đã sao chép ${copyableExpenses.length} khoản chi`);
+      if (copyTimerRef.current) {
+        clearTimeout(copyTimerRef.current);
+      }
+      copyTimerRef.current = setTimeout(() => setCopiedSummary(false), 2000);
+    } else {
+      onShowToast?.('Không thể sao chép tự động trên trình duyệt này');
+    }
   };
 
   return (
@@ -280,32 +346,56 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
           </div>
         </div>
 
-        {(hasActiveFilter || deletedCount > 0 || showDeleted) && (
-          <div className="pt-0.5 flex items-center justify-between text-[11px] text-slate-500">
-            <div className="flex items-center gap-2">
-              <span>{filteredExpenses.length} khoản</span>
+        {(copyableExpenses.length > 0 || hasActiveFilter || deletedCount > 0 || showDeleted) && (
+          <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium text-slate-600">{filteredExpenses.length} khoản</span>
               {hasActiveFilter && (
                 <button
                   type="button"
                   onClick={resetFilters}
-                  className="text-brand font-bold hover:underline"
+                  className="text-brand font-bold hover:underline cursor-pointer"
                 >
                   Bỏ lọc
                 </button>
               )}
+              {(deletedCount > 0 || showDeleted) && (
+                <button
+                  type="button"
+                  aria-pressed={showDeleted}
+                  onClick={() => setShowDeleted((prev) => !prev)}
+                  className={`inline-flex items-center gap-1 font-medium transition-colors cursor-pointer ${
+                    showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-500 hover:text-slate-900'
+                  }`}
+                >
+                  <Trash2 aria-hidden="true" className="w-3 h-3" />
+                  <span>{showDeleted ? 'Ẩn đã xóa' : `Đã xóa (${deletedCount})`}</span>
+                </button>
+              )}
             </div>
 
-            {(deletedCount > 0 || showDeleted) && (
+            {copyableExpenses.length > 0 && (
               <button
                 type="button"
-                aria-pressed={showDeleted}
-                onClick={() => setShowDeleted((prev) => !prev)}
-                className={`inline-flex items-center gap-1 font-medium transition-colors ${
-                  showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-500 hover:text-slate-900'
+                onClick={handleCopyExpensesSummary}
+                aria-label="Sao chép nội dung danh sách khoản chi"
+                className={`min-h-[32px] px-2.5 py-1 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                  copiedSummary
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-brand/40 hover:bg-brand-soft/60 hover:text-brand'
                 }`}
               >
-                <Trash2 aria-hidden="true" className="w-3 h-3" />
-                <span>{showDeleted ? 'Ẩn đã xóa' : `Đã xóa (${deletedCount})`}</span>
+                {copiedSummary ? (
+                  <>
+                    <Check aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Đã sao chép</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Sao chép nội dung</span>
+                  </>
+                )}
               </button>
             )}
           </div>

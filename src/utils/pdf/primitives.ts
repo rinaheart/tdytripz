@@ -17,7 +17,7 @@ import {
 
 /**
  * Đo và cắt chuỗi văn bản theo chiều rộng thực tế (`doc.getTextWidth`) và thêm `…`.
- * Tuyệt đối không cắt theo số ký tự cứng (`slice`, `maxChars`).
+ * Tuyệt đối không cắt theo số ký tự cứng.
  */
 export function fitText(doc: jsPDF, text: string, maxWidth: number): string {
   const clean = (text || '').trim();
@@ -32,7 +32,7 @@ export function fitText(doc: jsPDF, text: string, maxWidth: number): string {
   let high = clean.length;
   while (low < high) {
     const mid = Math.ceil((low + high) / 2);
-    const candidate = clean.slice(0, mid).trimEnd();
+    const candidate = clean.substring(0, mid).trimEnd();
     if (doc.getTextWidth(candidate) + ellipsisW <= maxWidth) {
       low = mid;
     } else {
@@ -40,7 +40,7 @@ export function fitText(doc: jsPDF, text: string, maxWidth: number): string {
     }
   }
 
-  return low > 0 ? `${clean.slice(0, low).trimEnd()}${ellipsis}` : ellipsis;
+  return low > 0 ? `${clean.substring(0, low).trimEnd()}${ellipsis}` : ellipsis;
 }
 
 /**

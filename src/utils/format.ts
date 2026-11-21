@@ -384,4 +384,150 @@ export function findDuplicateExpenseOnSameDay<
   return null;
 }
 
+export interface ChatExportExpenseItem {
+  id: string;
+  type: 'expense' | 'transfer';
+  title: string;
+  amount: number;
+  payer: string;
+  splits: Record<string, number>;
+  spentAt: string;
+  createdAt?: string;
+  deleted?: boolean;
+}
+
+export interface ChatExportMember {
+  id: string;
+  name: string;
+}
+
+export interface ChatExportTripConfig {
+  tripName: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+/**
+ * Tạo chuỗi văn bản định dạng gọn đẹp để dán nhanh vào Zalo / Messenger:
+ * Nhóm theo ngày, mỗi dòng theo mẫu: `• Tiêu đề - Số tiền - Người chi`
+ */
+export function formatExpensesForChat(params: {
+  config: ChatExportTripConfig;
+  expenses: ChatExportExpenseItem[];
+  members: ChatExportMember[];
+  filterSummary?: string;
+}): string {
+  const { config, expenses, members, filterSummary } = params;
+  const activeRecords = expenses.filter((e) => !e.deleted);
+  if (activeRecords.length === 0) return '';
+
+  const memberNameById = new Map<string, string>();
+  for (const m of members) {
+    memberNameById.set(m.id, m.name);
+  }
+  const resolveMemberName = (idOrName: string): string =>
+    memberNameById.get(idOrName) || idOrName || 'Không rõ';
+
+  const startDate = (config.startDate || '').trim().slice(0, 10);
+  const endDate = (config.endDate || '').trim().slice(0, 10);
+
+  // Sắp xếp tăng dần theo thời gian để đọc mạch lạc theo trình tự chuyến đi
+  const sorted = [...activeRecords].sort((a, b) => {
+    const cmpSpent = (a.spentAt || '').localeCompare(b.spentAt || '');
+    if (cmpSpent !== 0) return cmpSpent;
+    return (a.createdAt || '').localeCompare(b.createdAt || '');
+  });
+
+  let totalExpenseAmount = 0;
+  let expenseCount = 0;
+  let totalTransferAmount = 0;
+  let transferCount = 0;
+
+  const groupMap = new Map<
+    string,
+    {
+      headerTitle: string;
+      totalExpense: number;
+      lines: string[];
+    }
+  >();
+
+  for (const rec of sorted) {
+    const dateStr = (rec.spentAt || '').trim().slice(0, 10);
+    const isPreTrip = Boolean(startDate && dateStr && dateStr < startDate);
+    const groupKey = isPreTrip ? 'PRE_TRIP' : dateStr || 'UNKNOWN';
+    const headerTitle = formatDayGroupHeader(dateStr, startDate, endDate);
+
+    let grp = groupMap.get(groupKey);
+    if (!grp) {
+      grp = {
+        headerTitle,
+        totalExpense: 0,
+        lines: [],
+      };
+      groupMap.set(groupKey, grp);
+    }
+
+    const amountStr = formatVND(rec.amount, true);
+    const payerName = resolveMemberName(rec.payer);
+    const title = (rec.title || '').trim() || (rec.type === 'transfer' ? 'Chuyển khoản' : 'Khoản chi');
+
+    if (rec.type === 'transfer') {
+      totalTransferAmount += Math.round(rec.amount || 0);
+      transferCount += 1;
+      const recipientEntry = Object.entries(rec.splits || {}).find(
+        ([, val]) => Math.round(val || 0) > 0
+      );
+      const recipientName = recipientEntry ? resolveMemberName(recipientEntry[0]) : '';
+      const transferActor = recipientName ? `${payerName} → ${recipientName}` : payerName;
+      grp.lines.push(`• ${title} - ${amountStr} - ${transferActor}`);
+    } else {
+      totalExpenseAmount += Math.round(rec.amount || 0);
+      expenseCount += 1;
+      grp.totalExpense += Math.round(rec.amount || 0);
+      grp.lines.push(`• ${title} - ${amountStr} - ${payerName}`);
+    }
+  }
+
+  const outputLines: string[] = [];
+  const tripTitle = (config.tripName || 'Danh sách chi tiêu').trim();
+  const dateRange =
+    startDate && endDate
+      ? formatDateRangeVN(startDate, endDate)
+      : startDate
+        ? formatShortDateVN(startDate)
+        : '';
+
+  outputLines.push(dateRange ? `📋 ${tripTitle} (${dateRange})` : `📋 ${tripTitle}`);
+
+  if (filterSummary && filterSummary.trim()) {
+    outputLines.push(`Bộ lọc: ${filterSummary.trim()}`);
+  }
+
+  const summaryParts: string[] = [];
+  if (expenseCount > 0) {
+    summaryParts.push(`Tổng chi: ${formatVND(totalExpenseAmount, true)} (${expenseCount} khoản)`);
+  }
+  if (transferCount > 0) {
+    summaryParts.push(
+      `Chuyển tiền: ${formatVND(totalTransferAmount, true)} (${transferCount} giao dịch)`
+    );
+  }
+  if (summaryParts.length > 0) {
+    outputLines.push(summaryParts.join(' • '));
+  }
+
+  for (const grp of groupMap.values()) {
+    outputLines.push('');
+    const dayHeader =
+      grp.totalExpense > 0
+        ? `▸ ${grp.headerTitle} (${formatVND(grp.totalExpense, true)})`
+        : `▸ ${grp.headerTitle}`;
+    outputLines.push(dayHeader);
+    outputLines.push(...grp.lines);
+  }
+
+  return outputLines.join('\n');
+}
+
 

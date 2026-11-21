@@ -10,6 +10,7 @@ import {
   buildReportFileName,
   computeMemberCardGrid,
   deriveBannerPalette,
+  formatOwedRangeSubtext,
   formatSpentAtReportVN,
   getDayBucket,
   sanitizeFileNameSegment,
@@ -121,32 +122,37 @@ test('1. allocatePercentages luôn tổng bằng 100 theo phương pháp Largest
   assert.equal(pcts.length, raw.length);
 });
 
-test('2. getDayBucket phân loại đúng Trước chuyến, Ngày thứ k, Sau chuyến và Chưa rõ ngày', () => {
+test('2. getDayBucket phân loại đúng Trước chuyến, Ngày thứ k (label đầy đủ & shortLabel rút gọn), Sau chuyến và Chưa rõ ngày', () => {
   const pre1 = getDayBucket('2026-10-19 14:20', '2026-10-22', '2026-10-24');
   const pre2 = getDayBucket('2026-10-21 09:00', '2026-10-22', '2026-10-24');
   assert.equal(pre1.key, 'PRE_TRIP');
   assert.equal(pre2.key, 'PRE_TRIP');
   assert.equal(pre1.label, 'Trước chuyến');
+  assert.equal(pre1.shortLabel, 'Trước chuyến');
   assert.equal(pre1.kind, 'pre');
 
   const day1 = getDayBucket('2026-10-22 20:59', '2026-10-22', '2026-10-24');
   assert.equal(day1.key, '2026-10-22');
   assert.equal(day1.label, 'Thứ Năm 22/10 · Ngày 1');
+  assert.equal(day1.shortLabel, 'Ngày 1 · 22/10');
   assert.equal(day1.kind, 'trip');
 
   const day3 = getDayBucket('2026-10-24 18:00', '2026-10-22', '2026-10-24');
   assert.equal(day3.key, '2026-10-24');
   assert.equal(day3.label, 'Thứ Bảy 24/10 · Ngày 3');
+  assert.equal(day3.shortLabel, 'Ngày 3 · 24/10');
   assert.equal(day3.kind, 'trip');
 
   const post = getDayBucket('2026-10-26 10:00', '2026-10-22', '2026-10-24');
   assert.equal(post.key, 'POST_TRIP');
   assert.equal(post.label, 'Sau chuyến');
+  assert.equal(post.shortLabel, 'Sau chuyến');
   assert.equal(post.kind, 'post');
 
   const unknown = getDayBucket('', '2026-10-22', '2026-10-24');
   assert.equal(unknown.key, 'UNKNOWN');
   assert.equal(unknown.label, 'Chưa rõ ngày');
+  assert.equal(unknown.shortLabel, 'Chưa rõ ngày');
   assert.equal(unknown.kind, 'unknown');
 });
 
@@ -358,13 +364,26 @@ test('5 & 6 & 7. Fixture thực tế 5 người / 42 khoản chi (Hội nghị Y
     expenses: expenses42,
   });
 
-  // Tiêu chí 2: Số ngày hiển thị ở KPI là 3 ngày (từ 22–24/10), và biểu đồ ngày có đúng 1 dòng "Trước chuyến"
+  // Tiêu chí 2: Số ngày hiển thị ở KPI là 3 ngày (từ 22–24/10), và biểu đồ ngày có đúng 1 dòng "Trước chuyến" + nhãn rút gọn "Ngày 1 · 22/10"
   assert.equal(report.tripDays, 3);
   assert.equal(report.overview.tripDays, 3);
   assert.equal(report.dateRangeLabel, '22–24/10/2026');
   const preTripDayRows = report.overview.byDay.filter((d) => d.label === 'Trước chuyến');
   assert.equal(preTripDayRows.length, 1);
   assert.equal(preTripDayRows[0].count, 2);
+  assert.deepEqual(
+    report.overview.byDay.map((d) => d.label),
+    ['Trước chuyến', 'Ngày 1 · 22/10', 'Ngày 2 · 23/10', 'Ngày 3 · 24/10']
+  );
+
+  // Tiêu chí KPI 2 subtext: khoảng min–max của owedExpense khi có chênh lệch
+  assert.ok(report.overview.minOwedExpense < report.overview.maxOwedExpense);
+  assert.match(report.overview.averageSubtext, /^\d+,\d{2}–\d+,\d{2} tr\/người$/);
+  assert.equal(
+    formatOwedRangeSubtext([4288734, 4388280, 4440128, 4481331, 4698507], 5),
+    '4,29–4,70 tr/người'
+  );
+  assert.equal(formatOwedRangeSubtext([4500000, 4500000, 4500000], 3), '3 thành viên');
 
   // Tiêu chí 3: Tổng phần trăm mỗi biểu đồ bằng 100
   const catPctSum = report.overview.byCategory.reduce((acc, c) => acc + c.percentage, 0);
@@ -514,7 +533,7 @@ test('8. Stress test: 10 người, 100 khoản chi kết xuất tối đa 6 tran
   );
 });
 
-test('Quy ước tên file ASCII report_<slug>_<yyyymmdd>_<HHmm>.pdf, bảng màu banner & lưới thẻ cá nhân', () => {
+test('Quy ước tên file ASCII report_<slug>_<yyyymmdd>_<HHmm>.pdf, bảng màu banner (kẹp độ sáng vàng nhạt) & lưới thẻ cá nhân', () => {
   assert.equal(formatSpentAtReportVN('2026-10-24 19:30'), '24/10/2026 19:30');
   assert.equal(sanitizeFileNameSegment('Hà Nội!'), 'ha-noi');
   assert.equal(
@@ -534,8 +553,22 @@ test('Quy ước tên file ASCII report_<slug>_<yyyymmdd>_<HHmm>.pdf, bảng mà
   assert.equal(grid.leftColX, 14);
   assert.equal(grid.rightColX, 107);
 
-  const palette = deriveBannerPalette('#60a5fa'); // màu quá sáng sẽ được kẹp tối xuống L <= 0.26
-  assert.ok(palette.base[0] < 130 && palette.base[1] < 130);
+  const paletteBlue = deriveBannerPalette('#60a5fa');
+  assert.ok(paletteBlue.base[0] < 130 && paletteBlue.base[1] < 130);
+
+  // Thử nghiệm với accentColor vàng rất sáng (#FACC15 và #FEF08A) -> nền banner được kẹp tối xuống L <= 0.26 để chữ trắng đọc rõ
+  const paletteYellow = deriveBannerPalette('#FACC15');
+  const paletteLightYellow = deriveBannerPalette('#FEF08A');
+  assert.ok(
+    paletteYellow.base[0] <= 125 && paletteYellow.base[1] <= 105 && paletteYellow.base[2] <= 25,
+    `Expected dark clamped yellow banner base, got ${JSON.stringify(paletteYellow.base)}`
+  );
+  assert.ok(
+    paletteLightYellow.base[0] <= 125 &&
+      paletteLightYellow.base[1] <= 115 &&
+      paletteLightYellow.base[2] <= 25,
+    `Expected dark clamped light-yellow banner base, got ${JSON.stringify(paletteLightYellow.base)}`
+  );
 });
 
 test('9. LUCIDE_ICON_NODES đồng bộ 100% với bộ icon lucide-react đã cài đặt', () => {

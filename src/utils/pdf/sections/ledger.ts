@@ -1,5 +1,5 @@
 import type { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import autoTable, { type CellHookData, type RowInput } from 'jspdf-autotable';
 import { formatVND } from '../../format';
 import { drawLucideIcon } from '../../pdfLucideIcons';
 import type { ExpenseReportData, ExpenseReportRow } from '../../pdfReportData';
@@ -15,7 +15,6 @@ import {
   COLOR_AMBER_TEXT,
   COLOR_BORDER,
   COLOR_INK,
-  COLOR_MUTED,
   COLOR_ROSE_DARK,
   COLOR_SLATE,
   COLOR_TEAL_DARK,
@@ -35,9 +34,10 @@ type LedgerTableItem =
 
 /**
  * Trang 2 (và 3 nếu cần): Sổ chi tiết giao dịch
- * - Nhóm theo ngày: `Thứ Sáu 22/10 · Ngày 1` kèm tổng ngày bên phải. Các ngày trước chuyến gộp nhóm "Trước chuyến".
+ * - Tiêu đề mục 1 dòng có icon: `Sổ chi tiết • {n} khoản` (9,4pt đậm).
+ * - Nhóm theo ngày: `Thứ Năm 22/10 · Ngày 1` kèm tổng ngày bên phải. Các ngày trước chuyến gộp nhóm "Trước chuyến".
  * - 5 cột: `Giờ | Nội dung | Người chi | Chia | Số tiền`.
- * - Cỡ chữ 7,6pt, cellPadding ~1,15 để 42 dòng vừa trọn 1 trang.
+ * - Cỡ chữ 7,6pt, cellPadding tinh gọn để 42 dòng + tiêu đề mục vừa trọn 1 trang.
  * - Dòng `transfer`: nền tím nhạt, nội dung là cặp `[Avatar] A → [Avatar] B`.
  * - Cột `Chia`: hiện pill hổ phách `Chia riêng` khi `isCustomSplit === true`.
  */
@@ -47,7 +47,28 @@ export function renderLedgerSection(
   report: ExpenseReportData
 ): void {
   doc.addPage();
-  const cursorY = MARGIN_TOP;
+  let cursorY = MARGIN_TOP;
+
+  // Tiêu đề mục 1 dòng có icon ở đầu trang 2: "Sổ chi tiết • {n} khoản"
+  drawLucideIcon(
+    doc,
+    'Calculator',
+    MARGIN_X + 2.2,
+    cursorY + 2.1,
+    4.2,
+    [37, 99, 235],
+    [219, 234, 254],
+    'rounded-badge'
+  );
+  doc.setFont(activeFont, 'bold');
+  doc.setFontSize(9.4);
+  doc.setTextColor(...COLOR_INK);
+  doc.text(
+    `Sổ chi tiết • ${report.overview.expenseCount} khoản`,
+    MARGIN_X + 5.4,
+    cursorY + 3.3
+  );
+  cursorY += 5.0;
 
   // Đo kích thước cột Giờ và Số tiền theo mẫu rộng nhất (không đặt cứng theo mắt)
   const timeColWidth = measureCol(
@@ -67,7 +88,7 @@ export function renderLedgerSection(
     FONT_LEDGER
   );
   const payerColWidth = 29.0;
-  const splitColWidth = 33.0;
+  const splitColWidth = 34.0;
 
   const flatItems: LedgerTableItem[] = [];
   for (const grp of report.ledger) {
@@ -84,9 +105,9 @@ export function renderLedgerSection(
     }
   }
 
-  const bodyRows: any[] =
+  const bodyRows: RowInput[] =
     flatItems.length > 0
-      ? flatItems.map((item) => {
+      ? flatItems.map((item): RowInput => {
           if (item.type === 'group') {
             return [
               {
@@ -97,7 +118,7 @@ export function renderLedgerSection(
                   textColor: COLOR_INK,
                   fontStyle: 'bold',
                   fontSize: FONT_LEDGER,
-                  cellPadding: { top: 1.0, bottom: 1.0, left: 2.0, right: 1.5 },
+                  cellPadding: { top: 0.9, bottom: 0.9, left: 2.0, right: 1.5 },
                 },
               },
               {
@@ -108,7 +129,7 @@ export function renderLedgerSection(
                   fontStyle: 'bold',
                   halign: 'right',
                   fontSize: FONT_LEDGER,
-                  cellPadding: { top: 1.0, bottom: 1.0, left: 1.5, right: 1.5 },
+                  cellPadding: { top: 0.9, bottom: 0.9, left: 1.5, right: 1.5 },
                 },
               },
             ];
@@ -162,7 +183,7 @@ export function renderLedgerSection(
     styles: {
       font: activeFont,
       fontSize: FONT_LEDGER,
-      cellPadding: LEDGER_CELL_PADDING,
+      cellPadding: 1.02,
       textColor: COLOR_INK,
       lineColor: COLOR_BORDER,
       lineWidth: 0.1,
@@ -173,7 +194,7 @@ export function renderLedgerSection(
       font: activeFont,
       fontStyle: 'bold',
       fontSize: FONT_LEDGER,
-      cellPadding: 1.25,
+      cellPadding: 1.15,
       fillColor: [30, 41, 59],
       textColor: [255, 255, 255],
       lineColor: [30, 41, 59],
@@ -183,7 +204,7 @@ export function renderLedgerSection(
       font: activeFont,
       fontStyle: 'bold',
       fontSize: FONT_LEDGER,
-      cellPadding: 1.35,
+      cellPadding: 1.2,
       fillColor: [240, 253, 250],
       textColor: COLOR_TEAL_DARK,
       lineColor: [153, 246, 228],
@@ -197,7 +218,7 @@ export function renderLedgerSection(
       3: { cellWidth: splitColWidth },
       4: { cellWidth: amountColWidth, halign: 'right', fontStyle: 'bold' },
     },
-    didParseCell: (data: any) => {
+    didParseCell: (data: CellHookData) => {
       if (data.section !== 'body' || flatItems.length === 0) return;
       const item = flatItems[data.row.index];
       if (!item || item.type === 'group') return;
@@ -212,7 +233,7 @@ export function renderLedgerSection(
         data.cell.styles.fillColor = [250, 251, 253];
       }
     },
-    didDrawCell: (data: any) => {
+    didDrawCell: (data: CellHookData) => {
       if (data.section !== 'body' || flatItems.length === 0) return;
       const item = flatItems[data.row.index];
       if (!item || item.type === 'group') return;
@@ -329,18 +350,18 @@ export function renderLedgerSection(
           const pillLabel = 'Chia riêng';
           doc.setFont(activeFont, 'bold');
           doc.setFontSize(6.5);
-          const pillW = r.isCustomSplit ? doc.getTextWidth(pillLabel) + 2.6 : 0;
-          const textAvailW = r.isCustomSplit ? Math.max(10, availW - pillW - 1.4) : availW;
+          const pillW = r.isCustomSplit ? doc.getTextWidth(pillLabel) + 3.0 : 0;
+          const textAvailW = r.isCustomSplit ? Math.max(10, availW - pillW - 2.2) : availW;
 
           doc.setFont(activeFont, isExcept ? 'bold' : 'normal');
           doc.setFontSize(7.3);
           doc.setTextColor(...(isExcept ? COLOR_ROSE_DARK : COLOR_SLATE));
           const drawnText = fitText(doc, r.participants.text, textAvailW);
-          doc.text(drawnText, cellX + padLeft, baselineY);
+          doc.text(r.isCustomSplit ? `${drawnText} ` : drawnText, cellX + padLeft, baselineY);
 
           if (r.isCustomSplit && pillW > 0) {
             const textW = doc.getTextWidth(drawnText);
-            const pillX = cellX + padLeft + textW + 1.3;
+            const pillX = cellX + padLeft + textW + 2.0;
             const pillH = 3.5;
             const pillY = midY - pillH / 2;
 

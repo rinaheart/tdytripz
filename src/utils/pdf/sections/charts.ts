@@ -26,6 +26,7 @@ interface StatRowItem {
   amount: number;
   percentage: number;
   barColor: RGB;
+  showCount?: boolean;
   iconName?: string;
   iconStroke?: RGB;
   iconBg?: RGB;
@@ -81,8 +82,9 @@ function drawStatRow(
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(7.5);
   doc.setTextColor(...COLOR_INK);
-  const labelWithCount = `${item.label} • ${item.count} khoản`;
-  doc.text(fitText(doc, labelWithCount, maxLabelW), textStartX, rowY + 2.55);
+  const rowLabel =
+    item.showCount === false ? item.label : `${item.label} • ${item.count} khoản`;
+  doc.text(fitText(doc, rowLabel, maxLabelW), textStartX, rowY + 2.55);
 
   // 4. Thanh ngang tỉ lệ phía dưới
   const barY = rowY + 3.8;
@@ -151,7 +153,7 @@ function drawChartCard(
   doc.setLineWidth(0.2);
   doc.line(x + 2.5, y + headerH, x + width - 2.5, y + headerH);
 
-  const visibleItems = items.slice(0, 6);
+  const visibleItems = items.filter((_, idx) => idx < 6);
   if (visibleItems.length === 0) {
     doc.setFont(activeFont, 'normal');
     doc.setFontSize(7.6);
@@ -171,8 +173,8 @@ function drawChartCard(
 
 /**
  * Trang 1 - Mục 4: Hai biểu đồ cạnh nhau (`Theo danh mục` & `Theo ngày`).
- * - `Theo danh mục`: dùng tên rút gọn (`categoryName`) + icon hạng mục.
- * - `Theo ngày`: KHÔNG lặp lại icon lịch ở từng dòng.
+ * - `Theo danh mục`: dùng tên rút gọn (`categoryName`) + icon hạng mục + `• N khoản`.
+ * - `Theo ngày`: nhãn ngắn `Ngày 1 · 22/10`, KHÔNG lặp icon lịch và bỏ hậu tố `• N khoản`.
  */
 export function renderOverviewCharts(
   doc: jsPDF,
@@ -196,13 +198,14 @@ export function renderOverviewCharts(
       amount: c.amount,
       percentage: c.percentage,
       barColor: theme.bar,
+      showCount: true,
       iconName: theme.lucideIcon,
       iconStroke: theme.stroke,
       iconBg: theme.bg,
     };
   });
 
-  // "Theo ngày": không lặp icon lịch ở từng dòng
+  // "Theo ngày": không lặp icon lịch ở từng dòng và bỏ "• N khoản"
   const dayItems: StatRowItem[] = byDay.map((d, idx) => {
     const barColor = DAY_BAR_PALETTE[idx % DAY_BAR_PALETTE.length];
     return {
@@ -211,6 +214,7 @@ export function renderOverviewCharts(
       amount: d.amount,
       percentage: d.percentage,
       barColor,
+      showCount: false,
     };
   });
 

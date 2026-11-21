@@ -1019,6 +1019,7 @@ export default function App() {
                 setEditingRecord(null);
                 setIsExpenseModalOpen(true);
               }}
+              onShowToast={showToast}
             />
           )}
 
