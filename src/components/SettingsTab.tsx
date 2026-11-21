@@ -15,7 +15,6 @@ import {
   FolderKanban,
   FolderPlus,
   KeyRound,
-  Link2,
   Lock,
   Package,
   Plus,
@@ -34,7 +33,7 @@ import {
   BANK_LIST,
   sortCategoriesTailOrder,
 } from '../config';
-import { buildShareableTripUrl, normalizeTripCode } from '../services/syncService';
+import { normalizeTripCode } from '../services/syncService';
 import type {
   ArchiveAndNewTripPayload,
   ArchivedTripSnapshot,
@@ -168,7 +167,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   const [gasUrlInput, setGasUrlInput] = useState<string>(gasUrl);
   const [testingSheet, setTestingSheet] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
-  const [copiedShareLink, setCopiedShareLink] = useState<boolean>(false);
   const [showRawCodeGs, setShowRawCodeGs] = useState<boolean>(false);
   const [loadedCodeGs, setLoadedCodeGs] = useState<string>('');
   const [showHistory, setShowHistory] = useState<boolean>(false);
@@ -555,17 +553,6 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
     }
   };
 
-  const handleCopyInviteLink = async () => {
-    const activeUrl = gasUrlInput.trim() || gasUrl.trim();
-    const shareUrl = buildShareableTripUrl(activeUrl);
-    const ok = await copyToClipboard(shareUrl);
-    if (ok) {
-      setCopiedShareLink(true);
-      onShowToast('Đã copy link mời!');
-      setTimeout(() => setCopiedShareLink(false), 2000);
-    }
-  };
-
   const isConnectedSheet = Boolean(gasUrl.trim());
   const sortedMembers = useMemo(
     () => [...members].sort((a, b) => a.name.localeCompare(b.name, 'vi')),
@@ -604,7 +591,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
           ==================================================================== */}
       {!isAdmin ? (
         <>
-          {/* Card 1: Tóm tắt chuyến đi & Tác vụ nhanh (Xuất PDF, Link mời, Đồng bộ) */}
+          {/* Card 1: Tóm tắt chuyến đi & Tác vụ nhanh (Xuất PDF, Đồng bộ) */}
           <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3.5">
             <div className="space-y-1">
               <div className="flex items-start justify-between gap-2">
@@ -655,29 +642,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                 type="button"
                 disabled={!canExportPdf}
                 onClick={handleExportPdfReport}
-                className="flex-1 min-w-[160px] min-h-[44px] px-4 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
+                className="flex-1 min-w-[140px] min-h-[44px] px-4 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors cursor-pointer"
               >
                 <FileDown
                   aria-hidden="true"
                   className={`w-4 h-4 shrink-0 ${exportingPdf ? 'animate-bounce' : ''}`}
                 />
-                <span>{exportingPdf ? 'Đang tạo PDF…' : 'Xuất báo cáo PDF'}</span>
+                <span>{exportingPdf ? 'Đang tạo PDF…' : 'Xuất PDF'}</span>
               </button>
-
-              {isConnectedSheet && (
-                <button
-                  type="button"
-                  onClick={handleCopyInviteLink}
-                  className="min-h-[44px] px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 text-xs font-bold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 transition-colors cursor-pointer"
-                >
-                  {copiedShareLink ? (
-                    <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                  ) : (
-                    <Link2 aria-hidden="true" className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                  )}
-                  <span>{copiedShareLink ? 'Đã copy' : 'Link mời'}</span>
-                </button>
-              )}
 
               {isConnectedSheet && onReloadFromSheet && (
                 <button
@@ -1784,14 +1756,14 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                 </div>
               </section>
 
-              {/* Xuất báo cáo PDF (1 chỗ duy nhất trong tab Chuyến đi khi là Admin) */}
+              {/* Xuất PDF (1 chỗ duy nhất trong tab Chuyến đi khi là Admin) */}
               <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
                     <FileDown aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
                     <h3 className="text-xs font-bold text-slate-900 truncate">
                       {viewingArchive
-                        ? `Xuất báo cáo PDF (Lưu trữ: ${viewingArchive.summary.archiveCode})`
+                        ? `Xuất PDF (Lưu trữ: ${viewingArchive.summary.archiveCode})`
                         : 'Xuất báo cáo chi tiêu'}
                     </h3>
                   </div>
@@ -1805,7 +1777,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                       aria-hidden="true"
                       className={`w-3.5 h-3.5 ${exportingPdf ? 'animate-bounce' : ''}`}
                     />
-                    <span>{exportingPdf ? 'Đang tải & tạo PDF…' : 'Xuất báo cáo PDF'}</span>
+                    <span>{exportingPdf ? 'Đang tải & tạo PDF…' : 'Xuất PDF'}</span>
                   </button>
                 </div>
 
@@ -1854,33 +1826,16 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                     </span>
                   </div>
 
-                  {isConnectedSheet && (
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={handleCopyInviteLink}
-                        className="min-h-[38px] px-3 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
-                      >
-                        {copiedShareLink ? (
-                          <Check aria-hidden="true" className="w-3.5 h-3.5" />
-                        ) : (
-                          <Link2 aria-hidden="true" className="w-3.5 h-3.5" />
-                        )}
-                        <span>{copiedShareLink ? 'Đã copy' : 'Copy link mời'}</span>
-                      </button>
-
-                      {onReloadFromSheet && (
-                        <button
-                          type="button"
-                          onClick={onReloadFromSheet}
-                          title="Tải lại từ Sheet"
-                          className="min-h-[38px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
-                        >
-                          <RefreshCw aria-hidden="true" className="w-3.5 h-3.5" />
-                          <span>Đồng bộ</span>
-                        </button>
-                      )}
-                    </div>
+                  {isConnectedSheet && onReloadFromSheet && (
+                    <button
+                      type="button"
+                      onClick={onReloadFromSheet}
+                      title="Tải lại từ Sheet"
+                      className="min-h-[38px] px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-bold text-slate-700 flex items-center gap-1 whitespace-nowrap transition-colors cursor-pointer"
+                    >
+                      <RefreshCw aria-hidden="true" className="w-3.5 h-3.5" />
+                      <span>Đồng bộ</span>
+                    </button>
                   )}
                 </div>
 

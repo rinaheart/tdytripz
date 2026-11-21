@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Check,
   CheckCircle2,
+  ChevronDown,
   Copy,
   Eye,
   EyeOff,
@@ -49,6 +50,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
   const [viewMode, setViewMode] = useState<'simplified' | 'pairwise'>('simplified');
   const [reportDetailMode, setReportDetailMode] = useState<'compact' | 'full'>('compact');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [showZaloPanel, setShowZaloPanel] = useState(false);
   const [showQuickReportPreview, setShowQuickReportPreview] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -156,115 +158,128 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
     const ok = await copyToClipboard(quickReportText);
     if (ok) {
       setCopiedKey('quick_report');
-      onShowToast('Đã sao chép quyết toán — sẵn sàng dán Zalo/Messenger');
+      onShowToast('Đã sao chép quyết toán — sẵn sàng dán Zalo');
       scheduleClearCopied(2000);
     } else {
+      setShowZaloPanel(true);
       setShowQuickReportPreview(true);
       onShowToast('Không thể sao chép tự động — hãy copy từ khung xem trước');
     }
   };
 
   return (
-    <div className="space-y-4">
-      {/* Thanh hành động nhanh: Copy quyết toán gửi Zalo / Messenger */}
-      <section className="p-3 rounded-2xl bg-white/95 backdrop-blur-xs border border-slate-200/90 shadow-2xs space-y-2.5">
+    <div className="space-y-3.5">
+      {/* Thanh hành động nhanh "Gửi Zalo" thu gọn/mở rộng để tiện chụp ảnh màn hình */}
+      <section className="px-3 py-2 rounded-2xl bg-white/95 backdrop-blur-xs border border-slate-200/90 shadow-2xs">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="hidden sm:flex w-8 h-8 rounded-xl bg-brand-soft text-brand items-center justify-center shrink-0">
-              <FileText aria-hidden="true" className="w-4 h-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate">Gửi Zalo · Messenger</div>
-              <div className="text-[11px] text-slate-500 truncate">
-                {reportDetailMode === 'compact'
-                  ? 'Danh sách cần chuyển + STK'
-                  : 'Kèm tóm tắt thu chi từng người'}
+          <button
+            type="button"
+            onClick={() => setShowZaloPanel((prev) => !prev)}
+            aria-expanded={showZaloPanel}
+            aria-controls="settlement-zalo-panel"
+            className="flex-1 min-w-0 min-h-[36px] flex items-center gap-2 text-left cursor-pointer group"
+          >
+            <FileText aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
+            <span className="text-xs font-bold text-slate-800 truncate">Gửi Zalo</span>
+            <span className="text-[11px] font-medium text-slate-400 shrink-0">
+              · {reportDetailMode === 'compact' ? 'Ngắn gọn' : 'Đầy đủ'}
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${
+                showZaloPanel ? 'rotate-180 text-brand' : ''
+              }`}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCopyQuickReport}
+            className="min-h-[34px] px-3 py-1 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer shadow-xs"
+          >
+            {copiedKey === 'quick_report' ? (
+              <>
+                <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+                <span>Đã chép</span>
+              </>
+            ) : (
+              <>
+                <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                <span>Copy quyết toán</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {showZaloPanel && (
+          <div id="settlement-zalo-panel" className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="grid grid-cols-2 p-0.5 bg-slate-100 rounded-lg shrink-0">
+                <button
+                  type="button"
+                  aria-pressed={reportDetailMode === 'compact'}
+                  onClick={() => setReportDetailMode('compact')}
+                  className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    reportDetailMode === 'compact'
+                      ? 'bg-white text-brand shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Ngắn gọn
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={reportDetailMode === 'full'}
+                  onClick={() => setReportDetailMode('full')}
+                  className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                    reportDetailMode === 'full'
+                      ? 'bg-white text-brand shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Đầy đủ
+                </button>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setShowQuickReportPreview((prev) => !prev)}
+                aria-expanded={showQuickReportPreview}
+                aria-label={showQuickReportPreview ? 'Ẩn xem trước quyết toán' : 'Xem trước quyết toán'}
+                className={`min-h-[32px] px-2.5 py-1 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 ${
+                  showQuickReportPreview
+                    ? 'border-brand/40 bg-brand-soft text-brand'
+                    : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-slate-600'
+                }`}
+              >
+                {showQuickReportPreview ? (
+                  <>
+                    <EyeOff aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Ẩn xem trước</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>Xem trước</span>
+                  </>
+                )}
+              </button>
             </div>
-          </div>
 
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => setShowQuickReportPreview((prev) => !prev)}
-              aria-expanded={showQuickReportPreview}
-              aria-label={showQuickReportPreview ? 'Ẩn xem trước quyết toán' : 'Xem trước quyết toán'}
-              title={showQuickReportPreview ? 'Ẩn xem trước' : 'Xem trước nội dung'}
-              className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
-                showQuickReportPreview
-                  ? 'border-brand/40 bg-brand-soft text-brand'
-                  : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-slate-600'
-              }`}
-            >
-              {showQuickReportPreview ? (
-                <EyeOff aria-hidden="true" className="w-4 h-4" />
-              ) : (
-                <Eye aria-hidden="true" className="w-4 h-4" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCopyQuickReport}
-              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
-            >
-              {copiedKey === 'quick_report' ? (
-                <>
-                  <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                  <span>Đã sao chép</span>
-                </>
-              ) : (
-                <>
-                  <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-                  <span>Copy quyết toán</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-          <span className="text-[11px] font-medium text-slate-500">Nội dung copy</span>
-          <div className="grid grid-cols-2 p-0.5 bg-slate-100 rounded-lg shrink-0">
-            <button
-              type="button"
-              aria-pressed={reportDetailMode === 'compact'}
-              onClick={() => setReportDetailMode('compact')}
-              className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
-                reportDetailMode === 'compact'
-                  ? 'bg-white text-brand shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Ngắn gọn
-            </button>
-            <button
-              type="button"
-              aria-pressed={reportDetailMode === 'full'}
-              onClick={() => setReportDetailMode('full')}
-              className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
-                reportDetailMode === 'full'
-                  ? 'bg-white text-brand shadow-2xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Đầy đủ
-            </button>
-          </div>
-        </div>
-
-        {showQuickReportPreview && (
-          <div className="pt-2 border-t border-slate-100 space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-slate-500">
-              <span className="font-semibold">
-                Xem trước ({viewMode === 'simplified' ? 'Tối giản' : 'Từng cặp'} ·{' '}
-                {reportDetailMode === 'compact' ? 'Ngắn gọn' : 'Đầy đủ'})
-              </span>
-              <span>Chạm giữ hoặc bấm copy</span>
-            </div>
-            <pre className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] leading-relaxed font-mono text-slate-700 whitespace-pre-wrap break-words select-all max-h-64 overflow-y-auto">
-              {quickReportText}
-            </pre>
+            {showQuickReportPreview && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] text-slate-500">
+                  <span className="font-semibold">
+                    Xem trước ({viewMode === 'simplified' ? 'Tối giản' : 'Từng cặp'} ·{' '}
+                    {reportDetailMode === 'compact' ? 'Ngắn gọn' : 'Đầy đủ'})
+                  </span>
+                  <span>Chạm giữ hoặc bấm copy</span>
+                </div>
+                <pre className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] leading-relaxed font-mono text-slate-700 whitespace-pre-wrap break-words select-all max-h-64 overflow-y-auto">
+                  {quickReportText}
+                </pre>
+              </div>
+            )}
           </div>
         )}
       </section>
@@ -312,7 +327,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
             <div className="text-xs text-slate-500">Mọi thành viên đã quyết toán cân bằng.</div>
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {activeTransactions.map((tx) => {
               const sender = getMember(tx.fromMemberId);
               const recipient = getMember(tx.toMemberId);
@@ -335,125 +350,165 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
               const cleanAccountNo = String(recipient.accountNo || '')
                 .replace(/\s+/g, '')
                 .replace(/^'+/, '');
+              const bankMetaParts = [
+                recipient.bankName?.trim(),
+                recipient.accountHolder?.trim(),
+              ].filter(Boolean);
+              const hasAccountNo = cleanAccountNo.length > 0;
+              const hasBankMeta = bankMetaParts.length > 0;
 
               return (
                 <div
                   key={txKey}
-                  className={`p-3.5 rounded-2xl bg-white transition-all space-y-2.5 ${
+                  className={`px-3.5 py-2.5 rounded-2xl bg-white transition-all ${
                     isInvolvingMe
-                      ? 'border-2 border-brand shadow-sm shadow-brand/5'
+                      ? 'border-2 border-brand shadow-xs shadow-brand/5'
                       : 'border border-slate-200/90 shadow-2xs'
                   }`}
                 >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center gap-1.5 text-sm min-w-0">
+                  {/* Hàng chính: Ai chuyển cho ai + Số tiền (nếu không có STK thì nút Copy tiền nằm gọn ngay trên hàng này) */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="flex items-center gap-1.5 text-[13.5px] leading-snug min-w-0">
                         <span className="font-bold text-rose-600 truncate">{sender.name}</span>
                         <ArrowRight aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         <span className="font-bold text-emerald-700 truncate">{recipient.name}</span>
+                        {isInvolvingMe && (
+                          <span
+                            className={`text-[9.5px] font-bold uppercase tracking-tight shrink-0 px-1.5 py-0.5 rounded-md ${
+                              isMyDebt
+                                ? 'bg-rose-50 text-rose-700'
+                                : 'bg-emerald-50 text-emerald-700'
+                            }`}
+                          >
+                            {isMyDebt ? 'Bạn trả' : 'Bạn nhận'}
+                          </span>
+                        )}
                       </div>
+
                       {senderSplit && (
-                        <div className="text-[11px] font-medium text-slate-600">
-                          Tổng nhóm ({senderGroupSize} người):{' '}
-                          <strong className="font-mono font-bold text-slate-800 tabular-nums">
+                        <div className="text-[11px] font-medium text-slate-500 tabular-nums">
+                          Tổng {senderGroupSize} người:{' '}
+                          <span className="font-mono font-semibold text-slate-700">
                             {formatVND(tx.amount)}
-                          </strong>
+                          </span>
                         </div>
                       )}
+
                       {!senderSplit && recipientSplit && (
-                        <div className="text-[11px] font-medium text-slate-600">
-                          Mỗi người nhận ({recipientGroupSize}):{' '}
-                          <strong className="font-mono font-bold text-emerald-700 tabular-nums">
+                        <div className="text-[11px] font-medium text-slate-500 tabular-nums">
+                          Mỗi người nhận (÷{recipientGroupSize}):{' '}
+                          <span className="font-mono font-semibold text-emerald-700">
                             {recipientSplit.isExact ? '' : '~'}
                             {formatVND(recipientSplit.perPerson)}
-                          </strong>
+                          </span>
+                        </div>
+                      )}
+
+                      {!hasAccountNo && hasBankMeta && (
+                        <div className="text-[11px] text-slate-500 truncate">
+                          {bankMetaParts.join(' · ')}
                         </div>
                       )}
                     </div>
 
-                    <div className="text-right shrink-0">
-                      {senderSplit ? (
-                        <>
-                          <div className="text-base sm:text-lg font-mono font-extrabold text-brand tabular-nums">
-                            {senderSplit.isExact ? '' : '~'}
-                            {formatVND(senderSplit.perPerson)}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        {senderSplit ? (
+                          <>
+                            <div className="text-[15px] sm:text-base font-mono font-extrabold text-brand tabular-nums leading-tight">
+                              {senderSplit.isExact ? '' : '~'}
+                              {formatVND(senderSplit.perPerson)}
+                            </div>
+                            <div className="text-[10px] font-semibold text-slate-500 leading-tight mt-0.5">
+                              / người (÷{senderGroupSize})
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-[15px] sm:text-base font-mono font-extrabold text-brand tabular-nums leading-tight">
+                            {formatVND(tx.amount)}
                           </div>
-                          <div className="text-[10.5px] font-bold text-slate-500">
-                            mỗi người (÷{senderGroupSize})
-                          </div>
-                        </>
-                      ) : (
-                        <div className="text-base sm:text-lg font-mono font-extrabold text-brand tabular-nums">
-                          {formatVND(tx.amount)}
-                        </div>
-                      )}
-                      {isInvolvingMe && (
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 mt-0.5 rounded-full text-[10px] font-bold uppercase ${
-                            isMyDebt
-                              ? 'bg-rose-50 text-rose-700 border border-rose-200'
-                              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        )}
+                      </div>
+
+                      {!hasAccountNo && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyRawAmount(
+                              txKey,
+                              copyTargetAmount,
+                              senderSplit ? 'số tiền mỗi người' : undefined
+                            )
+                          }
+                          aria-label={`Copy số tiền ${sender.name} chuyển ${recipient.name}`}
+                          title={senderSplit ? 'Copy số tiền mỗi người' : 'Copy số tiền'}
+                          className={`w-8 h-8 rounded-xl flex items-center justify-center transition-colors cursor-pointer shrink-0 ${
+                            copiedKey === `amt_${txKey}`
+                              ? 'bg-emerald-50 text-emerald-600 border border-emerald-200'
+                              : 'bg-slate-100/90 hover:bg-brand-soft text-slate-600 hover:text-brand'
                           }`}
                         >
-                          {isMyDebt ? 'Bạn chuyển' : 'Bạn nhận'}
-                        </span>
+                          {copiedKey === `amt_${txKey}` ? (
+                            <Check aria-hidden="true" className="w-3.5 h-3.5" />
+                          ) : (
+                            <Copy aria-hidden="true" className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                       )}
                     </div>
                   </div>
 
-                  <div className="text-xs font-mono text-slate-600 leading-snug break-words">
-                    {cleanAccountNo ? (
-                      <>
-                        <span className="text-slate-500 font-sans">STK nhận: </span>
+                  {/* Chỉ hiển thị dải STK + 2 nút Copy tinh gọn khi người nhận có khai báo STK */}
+                  {hasAccountNo && (
+                    <div className="mt-2 pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5">
+                      <div className="text-[11.5px] font-mono text-slate-600 leading-snug break-words min-w-0 flex-1">
                         <strong className="text-slate-900 select-all">{cleanAccountNo}</strong>
-                        {(recipient.bankName || recipient.accountHolder) ? (
+                        {hasBankMeta && (
                           <span className="text-slate-500 font-sans">
                             {' · '}
-                            {[recipient.bankName?.trim(), recipient.accountHolder?.trim()]
-                              .filter(Boolean)
-                              .join(' · ')}
+                            {bankMetaParts.join(' · ')}
                           </span>
-                        ) : null}
-                      </>
-                    ) : (
-                      <span className="text-slate-400 italic font-sans">Chưa cập nhật STK</span>
-                    )}
-                  </div>
+                        )}
+                      </div>
 
-                  {/* Chỉ duy nhất 2 nút Copy tinh gọn: STK (raw string giữ số 0 đầu) & Số tiền (raw integer) */}
-                  <div className="pt-2.5 border-t border-slate-100 grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleCopyAccountNo(txKey, recipient)}
-                      className="min-h-[40px] px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-xs font-bold text-slate-700 flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer"
-                    >
-                      {copiedKey === `stk_${txKey}` ? (
-                        <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      ) : (
-                        <Copy aria-hidden="true" className="w-3.5 h-3.5 text-slate-500 shrink-0" />
-                      )}
-                      <span>Copy STK</span>
-                    </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleCopyAccountNo(txKey, recipient)}
+                          aria-label={`Copy STK của ${recipient.name}`}
+                          className="min-h-[30px] px-2.5 py-1 rounded-lg border border-slate-200 bg-slate-50/80 hover:bg-slate-100 text-[11px] font-bold text-slate-700 inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                        >
+                          {copiedKey === `stk_${txKey}` ? (
+                            <Check aria-hidden="true" className="w-3 h-3 text-emerald-600 shrink-0" />
+                          ) : (
+                            <Copy aria-hidden="true" className="w-3 h-3 text-slate-500 shrink-0" />
+                          )}
+                          <span>STK</span>
+                        </button>
 
-                    <button
-                      type="button"
-                      onClick={() =>
-                        handleCopyRawAmount(
-                          txKey,
-                          copyTargetAmount,
-                          senderSplit ? 'số tiền mỗi người' : undefined
-                        )
-                      }
-                      className="min-h-[40px] px-3 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
-                    >
-                      {copiedKey === `amt_${txKey}` ? (
-                        <Check aria-hidden="true" className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
-                      ) : (
-                        <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-                      )}
-                      <span>{senderSplit ? 'Copy / người' : 'Copy Số tiền'}</span>
-                    </button>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleCopyRawAmount(
+                              txKey,
+                              copyTargetAmount,
+                              senderSplit ? 'số tiền mỗi người' : undefined
+                            )
+                          }
+                          aria-label={`Copy số tiền ${sender.name} chuyển ${recipient.name}`}
+                          className="min-h-[30px] px-2.5 py-1 rounded-lg bg-brand hover:bg-brand-hover text-white text-[11px] font-bold inline-flex items-center gap-1 transition-colors whitespace-nowrap cursor-pointer"
+                        >
+                          {copiedKey === `amt_${txKey}` ? (
+                            <Check aria-hidden="true" className="w-3 h-3 text-emerald-300 shrink-0" />
+                          ) : (
+                            <Copy aria-hidden="true" className="w-3 h-3 shrink-0" />
+                          )}
+                          <span>{senderSplit ? 'Tiền /ng' : 'Số tiền'}</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}

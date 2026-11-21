@@ -59,12 +59,14 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
   onOpenAddModal,
   onShowToast,
 }) => {
+  const [showSearchPanel, setShowSearchPanel] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [memberFilter, setMemberFilter] = useState<string>('all');
   const [showDeleted, setShowDeleted] = useState<boolean>(false);
   const [visibleLimit, setVisibleLimit] = useState<number>(100);
   const [copiedSummary, setCopiedSummary] = useState<boolean>(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -219,8 +221,11 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
     return groups;
   }, [filteredExpenses, visibleLimit, config.startDate, config.endDate]);
 
-  const hasActiveFilter =
-    searchQuery.trim() !== '' || categoryFilter !== 'all' || memberFilter !== 'all';
+  const activeFilterCount =
+    (searchQuery.trim() !== '' ? 1 : 0) +
+    (categoryFilter !== 'all' ? 1 : 0) +
+    (memberFilter !== 'all' ? 1 : 0);
+  const hasActiveFilter = activeFilterCount > 0;
 
   const copyableExpenses = useMemo(
     () => filteredExpenses.filter((e) => !e.deleted),
@@ -276,108 +281,50 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
 
   return (
     <div className="space-y-3.5">
-      {/* Thanh tìm kiếm & bộ lọc tinh gọn theo phong cách TdyTime */}
-      <section className="p-3 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-2">
-        <div className="relative flex items-center">
-          <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
-          <input
-            type="search"
-            name="expense-search"
-            autoComplete="off"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Tìm khoản chi, ghi chú…"
-            aria-label="Tìm khoản chi"
-            className="w-full min-h-[40px] pl-9 pr-9 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 focus:border-brand focus:bg-white text-xs font-medium text-slate-900 transition-colors"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              aria-label="Xóa từ khóa"
-              className="absolute right-1.5 min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
-            >
-              <X aria-hidden="true" className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="grid grid-cols-2 gap-2">
-          <div className="relative flex items-center">
-            <select
-              name="category-filter"
-              value={categoryFilter}
-              onChange={(e) => setCategoryFilter(e.target.value)}
-              aria-label="Lọc danh mục"
-              className={`w-full min-h-[38px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
-                categoryFilter !== 'all'
-                  ? 'border-brand bg-brand-soft/60 text-brand'
-                  : 'border-slate-200 bg-white text-slate-700'
+      {/* Thanh tìm kiếm & bộ lọc thu gọn/mở rộng để tiện chụp ảnh màn hình */}
+      <section className="px-3 py-2 rounded-2xl bg-white/95 backdrop-blur-xs border border-slate-200/90 shadow-2xs">
+        <div className="flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={() => setShowSearchPanel((prev) => !prev)}
+            aria-expanded={showSearchPanel}
+            aria-controls="expense-search-panel"
+            className="flex-1 min-w-0 min-h-[36px] flex items-center gap-2 text-left cursor-pointer group"
+          >
+            <Search
+              aria-hidden="true"
+              className={`w-4 h-4 shrink-0 transition-colors ${
+                hasActiveFilter || showSearchPanel ? 'text-brand' : 'text-slate-400 group-hover:text-slate-600'
+              }`}
+            />
+            <span
+              className={`text-xs font-bold truncate ${
+                hasActiveFilter ? 'text-brand' : 'text-slate-700'
               }`}
             >
-              <option value="all">Mọi danh mục</option>
-              <option value="__transfer__">Chuyển tiền</option>
-              {sortCategoriesTailOrder(categories).map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2.5" />
-          </div>
-
-          <div className="relative flex items-center">
-            <select
-              name="member-filter"
-              value={memberFilter}
-              onChange={(e) => setMemberFilter(e.target.value)}
-              aria-label="Lọc theo người trả"
-              className={`w-full min-h-[38px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
-                memberFilter !== 'all'
-                  ? 'border-brand bg-brand-soft/60 text-brand'
-                  : 'border-slate-200 bg-white text-slate-700'
+              {hasActiveFilter ? `Đang lọc (${activeFilterCount})` : 'Tìm kiếm & lọc'}
+            </span>
+            <span className="text-[11px] font-medium text-slate-400 shrink-0 tabular-nums">
+              · {filteredExpenses.length} khoản
+            </span>
+            <ChevronDown
+              aria-hidden="true"
+              className={`w-3.5 h-3.5 text-slate-400 shrink-0 transition-transform duration-200 ${
+                showSearchPanel ? 'rotate-180 text-brand' : ''
               }`}
-            >
-              <option value="all">Mọi người trả</option>
-              {[...members]
-                .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-            </select>
-            <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2.5" />
-          </div>
-        </div>
+            />
+          </button>
 
-        {(copyableExpenses.length > 0 || hasActiveFilter || deletedCount > 0 || showDeleted) && (
-          <div className="pt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium text-slate-600">{filteredExpenses.length} khoản</span>
-              {hasActiveFilter && (
-                <button
-                  type="button"
-                  onClick={resetFilters}
-                  className="text-brand font-bold hover:underline cursor-pointer"
-                >
-                  Bỏ lọc
-                </button>
-              )}
-              {(deletedCount > 0 || showDeleted) && (
-                <button
-                  type="button"
-                  aria-pressed={showDeleted}
-                  onClick={() => setShowDeleted((prev) => !prev)}
-                  className={`inline-flex items-center gap-1 font-medium transition-colors cursor-pointer ${
-                    showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-500 hover:text-slate-900'
-                  }`}
-                >
-                  <Trash2 aria-hidden="true" className="w-3 h-3" />
-                  <span>{showDeleted ? 'Ẩn đã xóa' : `Đã xóa (${deletedCount})`}</span>
-                </button>
-              )}
-            </div>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {hasActiveFilter && !showSearchPanel && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="min-h-[32px] px-2 rounded-lg text-[11px] font-bold text-brand hover:bg-brand-soft/60 transition-colors cursor-pointer"
+              >
+                Bỏ lọc
+              </button>
+            )}
 
             {copyableExpenses.length > 0 && (
               <button
@@ -393,21 +340,128 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                 {copiedSummary ? (
                   <>
                     <Check aria-hidden="true" className="w-3.5 h-3.5" />
-                    <span>Đã sao chép</span>
+                    <span>Đã chép</span>
                   </>
                 ) : (
                   <>
                     <Copy aria-hidden="true" className="w-3.5 h-3.5" />
-                    <span>Sao chép nội dung</span>
+                    <span>Sao chép</span>
                   </>
                 )}
               </button>
             )}
           </div>
+        </div>
+
+        {showSearchPanel && (
+          <div id="expense-search-panel" className="mt-2.5 pt-2.5 border-t border-slate-100 space-y-2">
+            <div className="relative flex items-center">
+              <Search aria-hidden="true" className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                ref={searchInputRef}
+                type="search"
+                name="expense-search"
+                autoComplete="off"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Tìm khoản chi, ghi chú…"
+                aria-label="Tìm khoản chi"
+                className="w-full min-h-[38px] pl-9 pr-9 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 focus:border-brand focus:bg-white text-xs font-medium text-slate-900 transition-colors"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  aria-label="Xóa từ khóa"
+                  className="absolute right-1.5 min-w-[34px] min-h-[34px] flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                >
+                  <X aria-hidden="true" className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="relative flex items-center">
+                <select
+                  name="category-filter"
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  aria-label="Lọc danh mục"
+                  className={`w-full min-h-[36px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
+                    categoryFilter !== 'all'
+                      ? 'border-brand bg-brand-soft/60 text-brand'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <option value="all">Mọi danh mục</option>
+                  <option value="__transfer__">Chuyển tiền</option>
+                  {sortCategoriesTailOrder(categories).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2.5" />
+              </div>
+
+              <div className="relative flex items-center">
+                <select
+                  name="member-filter"
+                  value={memberFilter}
+                  onChange={(e) => setMemberFilter(e.target.value)}
+                  aria-label="Lọc theo người trả"
+                  className={`w-full min-h-[36px] pl-3 pr-7 py-1 rounded-xl border text-xs font-semibold appearance-none transition-colors ${
+                    memberFilter !== 'all'
+                      ? 'border-brand bg-brand-soft/60 text-brand'
+                      : 'border-slate-200 bg-white text-slate-700'
+                  }`}
+                >
+                  <option value="all">Mọi người trả</option>
+                  {[...members]
+                    .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name}
+                      </option>
+                    ))}
+                </select>
+                <ChevronDown aria-hidden="true" className="w-3.5 h-3.5 text-slate-400 pointer-events-none absolute right-2.5" />
+              </div>
+            </div>
+
+            {(hasActiveFilter || deletedCount > 0 || showDeleted) && (
+              <div className="pt-0.5 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  {hasActiveFilter && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="text-brand font-bold hover:underline cursor-pointer"
+                    >
+                      Bỏ lọc
+                    </button>
+                  )}
+                  {(deletedCount > 0 || showDeleted) && (
+                    <button
+                      type="button"
+                      aria-pressed={showDeleted}
+                      onClick={() => setShowDeleted((prev) => !prev)}
+                      className={`inline-flex items-center gap-1 font-medium transition-colors cursor-pointer ${
+                        showDeleted ? 'text-rose-700 font-semibold' : 'text-slate-500 hover:text-slate-900'
+                      }`}
+                    >
+                      <Trash2 aria-hidden="true" className="w-3 h-3" />
+                      <span>{showDeleted ? 'Ẩn đã xóa' : `Đã xóa (${deletedCount})`}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         )}
 
         {isAdmin && (
-          <div className="pt-1.5 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-700 text-center">
+          <div className="mt-2 pt-1.5 border-t border-slate-100 flex items-center justify-center gap-1.5 text-[11px] font-semibold text-emerald-700 text-center">
             <ShieldCheck aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
             <span>
               {config.tripStatus === 'completed'
