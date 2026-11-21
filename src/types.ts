@@ -120,3 +120,38 @@ export interface AppStateData {
   history: HistoryEntry[];
   lastSyncedAt: string | null;
 }
+
+export interface ArchivedTripSummary {
+  archiveCode: string;
+  tripId: string;
+  tripName: string;
+  location: string;
+  startDate: string;
+  endDate: string;
+  archivedAt: string;
+  archivedBy: string;
+  expenseSheetName: string;
+  expenseCount: number;
+  totalExpense: number;
+  memberCount: number;
+}
+
+export interface ArchivedTripSnapshot {
+  summary: ArchivedTripSummary;
+  config: TripConfig;
+  members: Member[];
+  categories: Category[];
+  expenses: ExpenseRecord[];
+}
+
+export interface ArchiveAndNewTripPayload {
+  archiveCode: string;
+  newTripId: string;
+  newTripName: string;
+  newLocation: string;
+  newStartDate: string;
+  newEndDate: string;
+  keepMembers: boolean;
+  keepCategories: boolean;
+}
+

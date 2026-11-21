@@ -2,6 +2,7 @@ import React from 'react';
 import { Check, UserCheck, X } from 'lucide-react';
 import { useModalAccessibility } from '../hooks/useModalAccessibility';
 import type { Member } from '../types';
+import { getMemberGroupSize } from '../utils/math';
 import { MemberAvatar } from './MemberAvatar';
 
 interface WhoAmIModalProps {
@@ -66,6 +67,7 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
         <div className="p-4 pb-[max(1rem,env(safe-area-inset-bottom))] overflow-y-auto overscroll-contain grid grid-cols-1 gap-2.5">
           {activeMembers.map((member) => {
             const isSelected = member.id === currentUserId;
+            const groupSize = getMemberGroupSize(member);
             return (
               <button
                 key={member.id}
@@ -84,6 +86,11 @@ export const WhoAmIModal: React.FC<WhoAmIModalProps> = ({
                     <div className="font-bold text-sm text-slate-900 truncate">
                       {member.name}
                     </div>
+                    {groupSize > 1 && (
+                      <div className="text-[11px] text-slate-500">
+                        Nhóm {groupSize} người · Tự động chia {groupSize} suất
+                      </div>
+                    )}
                   </div>
                 </div>
 

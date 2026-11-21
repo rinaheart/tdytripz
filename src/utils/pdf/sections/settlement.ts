@@ -180,8 +180,9 @@ export function renderSettlementHero(
 
     // Danh sách người chuyển bên dưới kèm thanh ngang tỉ lệ
     const maxSenderAmount = Math.max(1, ...grp.senders.map((s) => s.amount));
-    const nameColW = 36;
-    const amountColW = 28;
+    const hasGroupSender = grp.senders.some((s) => s.fromGroupSize > 1);
+    const nameColW = 38;
+    const amountColW = hasGroupSender ? 56 : 28;
     const barStartX = MARGIN_X + 4.0 + nameColW;
     const barEndX = MARGIN_X + CONTENT_WIDTH - 4.0 - amountColW;
     const barTrackW = Math.max(20, barEndX - barStartX);
@@ -232,16 +233,17 @@ export function renderSettlementHero(
         doc.roundedRect(barStartX, barY, fillW, barH, 1.0, 1.0, 'F');
       }
 
-      // Số tiền cần chuyển (căn phải, không lặp ₫)
+      // Số tiền cần chuyển (căn phải; với nhóm gộp hiển thị mỗi người + tổng nhóm)
       doc.setFont(activeFont, 'bold');
-      doc.setFontSize(8.2);
+      doc.setFontSize(sender.fromGroupSize > 1 ? 7.6 : 8.2);
       doc.setTextColor(...COLOR_ROSE_DARK);
-      doc.text(
-        formatVND(sender.amount, false),
-        MARGIN_X + CONTENT_WIDTH - 4.0,
-        textBaselineY,
-        { align: 'right' }
-      );
+      const amountText =
+        sender.fromGroupSize > 1
+          ? `${sender.perPersonIsExact ? '' : '~'}${formatVND(sender.perPersonAmount, false)}/ng (Tổng ${formatVND(sender.amount, false)})`
+          : formatVND(sender.amount, false);
+      doc.text(amountText, MARGIN_X + CONTENT_WIDTH - 4.0, textBaselineY, {
+        align: 'right',
+      });
     });
 
     y += cardH + GRID_GAP;

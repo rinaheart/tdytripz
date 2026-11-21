@@ -35,7 +35,13 @@ import {
   readVietnameseNumber,
   toDatetimeLocalValue,
 } from '../utils/format';
-import { splitByShares, splitEqual, validateExactSplits } from '../utils/math';
+import {
+  getMemberGroupSize,
+  splitByShares,
+  splitEqualWeighted,
+  splitPerGroupMember,
+  validateExactSplits,
+} from '../utils/math';
 
 const EXPENSE_DRAFT_STORAGE_KEY = 'tdytrip_expense_draft_v1';
 
@@ -73,6 +79,22 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
         .sort((a, b) => a.name.localeCompare(b.name, 'vi')),
     [members]
   );
+
+  const memberGroupWeights = useMemo<Record<string, number>>(() => {
+    const map: Record<string, number> = {};
+    for (const m of activeMembers) {
+      map[m.id] = getMemberGroupSize(m);
+    }
+    return map;
+  }, [activeMembers]);
+
+  const totalActiveHeadcount = useMemo(
+    () => activeMembers.reduce((sum, m) => sum + (memberGroupWeights[m.id] || 1), 0),
+    [activeMembers, memberGroupWeights]
+  );
+
+  const hasGroupMembers = totalActiveHeadcount > activeMembers.length;
+
   const visibleCategories = useMemo(
     () =>
       sortCategoriesTailOrder(
@@ -124,7 +146,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     const defaultMemberIds = activeMembers.map((m) => m.id);
     const defaultShares: Record<string, number> = {};
     for (const m of activeMembers) {
-      defaultShares[m.id] = m.defaultWeight || 1;
+      const groupSize = getMemberGroupSize(m);
+      defaultShares[m.id] = groupSize > 1 ? groupSize : m.defaultWeight || 1;
     }
 
     const resolveMemberId = (idOrName: string): string => {
@@ -226,7 +249,11 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
           ? restoredDraft.selectedMembers
           : defaultMemberIds
       );
-      setSharesMap(restoredDraft?.sharesMap || defaultShares);
+      setSharesMap(
+        restoredDraft?.sharesMap
+          ? { ...defaultShares, ...restoredDraft.sharesMap }
+          : defaultShares
+      );
       setExactMap(restoredDraft?.exactMap || {});
     }
   }, [isOpen, editingRecord?.id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -336,7 +363,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
       return recipientId ? { [recipientId]: effectiveAmount } : {};
     }
     if (splitMode === 'equal') {
-      return splitEqual(effectiveAmount, selectedMembers, recordId);
+      return splitEqualWeighted(effectiveAmount, selectedMembers, memberGroupWeights, recordId);
     }
     if (splitMode === 'shares') {
       return splitByShares(effectiveAmount, sharesMap, recordId);
@@ -352,10 +379,16 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
     recipientId,
     splitMode,
     selectedMembers,
+    memberGroupWeights,
     recordId,
     sharesMap,
     exactMap,
   ]);
+
+  const selectedHeadcount = useMemo(
+    () => selectedMembers.reduce((sum, id) => sum + (memberGroupWeights[id] || 1), 0),
+    [selectedMembers, memberGroupWeights]
+  );
 
   const exactValidation = useMemo(
     () => validateExactSplits(effectiveAmount, exactMap),
@@ -918,8 +951,8 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-xs">
                     <span className="text-slate-600">
-                      Chọn <strong className="text-slate-900">{selectedMembers.length}</strong>/
-                      {activeMembers.length} người
+                      Chọn <strong className="text-slate-900">{selectedHeadcount}</strong>/
+                      {totalActiveHeadcount} {hasGroupMembers ? 'suất' : 'người'}
                     </span>
                     <div className="flex items-center gap-1.5">
                       <button
@@ -927,7 +960,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                         onClick={() => setSelectedMembers(activeMembers.map((m) => m.id))}
                         className="min-h-[32px] px-2.5 py-1 rounded-sm bg-brand-soft text-brand font-semibold"
                       >
-                        Tất cả ({activeMembers.length})
+                        Tất cả ({totalActiveHeadcount})
                       </button>
                       <button
                         type="button"
@@ -942,19 +975,24 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   <div className="divide-y divide-slate-100 border border-slate-200 rounded-md overflow-hidden bg-white">
                     {activeMembers.map((m) => {
                       const checked = selectedMembers.includes(m.id);
+                      const groupSize = memberGroupWeights[m.id] || 1;
                       const memberShare = computedSplits[m.id] || 0;
+                      const perPerson =
+                        checked && groupSize > 1 && memberShare > 0
+                          ? splitPerGroupMember(memberShare, groupSize)
+                          : null;
                       return (
                         <button
                           key={m.id}
                           type="button"
                           onClick={() => toggleMemberEqual(m.id)}
-                          className={`w-full min-h-[46px] px-3.5 py-2 flex items-center justify-between text-left transition-colors ${
+                          className={`w-full min-h-[46px] px-3.5 py-2 flex items-center justify-between gap-2 text-left transition-colors ${
                             checked ? 'bg-brand-soft/40' : 'bg-white opacity-60'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             <div
-                              className={`w-5 h-5 rounded-sm flex items-center justify-center border ${
+                              className={`w-5 h-5 rounded-sm flex items-center justify-center border shrink-0 ${
                                 checked
                                   ? 'bg-brand border-brand text-white'
                                   : 'border-slate-300 bg-white'
@@ -962,11 +1000,28 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                             >
                               {checked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                             </div>
-                            <span className="text-sm font-semibold text-slate-900">{m.name}</span>
+                            <div className="min-w-0 flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-semibold text-slate-900 truncate">
+                                {m.name}
+                              </span>
+                              {groupSize > 1 && (
+                                <span className="px-1.5 py-0.5 rounded-md bg-brand-soft text-brand text-[10px] font-bold shrink-0">
+                                  ×{groupSize} suất
+                                </span>
+                              )}
+                            </div>
                           </div>
-                          <span className="text-xs font-mono font-bold text-slate-800 tabular-nums">
-                            {checked ? formatVND(memberShare) : '0 ₫'}
-                          </span>
+                          <div className="text-right shrink-0">
+                            <div className="text-xs font-mono font-bold text-slate-800 tabular-nums">
+                              {checked ? formatVND(memberShare) : '0 ₫'}
+                            </div>
+                            {perPerson && (
+                              <div className="text-[10px] font-mono font-semibold text-brand tabular-nums">
+                                {perPerson.isExact ? '' : '~'}
+                                {formatVND(perPerson.perPerson, false)}/người
+                              </div>
+                            )}
+                          </div>
                         </button>
                       );
                     })}
@@ -978,19 +1033,39 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                 <div className="divide-y divide-slate-100 border border-slate-200 rounded-md overflow-hidden bg-white">
                   {activeMembers.map((m) => {
                     const weight = sharesMap[m.id] ?? 0;
+                    const groupSize = memberGroupWeights[m.id] || 1;
                     const memberShare = computedSplits[m.id] || 0;
+                    const perPerson =
+                      groupSize > 1 && memberShare > 0
+                        ? splitPerGroupMember(memberShare, groupSize)
+                        : null;
                     return (
                       <div
                         key={m.id}
                         className="min-h-[48px] px-3.5 py-2 flex items-center justify-between gap-2"
                       >
                         <div className="min-w-0">
-                          <div className="text-sm font-semibold text-slate-900">{m.name}</div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-sm font-semibold text-slate-900 truncate">
+                              {m.name}
+                            </span>
+                            {groupSize > 1 && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-brand-soft text-brand text-[10px] font-bold shrink-0">
+                                Mặc định {groupSize}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs font-mono text-brand font-semibold tabular-nums">
                             {formatVND(memberShare)}
+                            {perPerson && (
+                              <span className="text-[10px] text-slate-500 font-medium ml-1.5">
+                                ({perPerson.isExact ? '' : '~'}
+                                {formatVND(perPerson.perPerson, false)}/ng)
+                              </span>
+                            )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
                             onClick={() => adjustShare(m.id, -1)}
@@ -999,7 +1074,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                           >
                             <Minus aria-hidden="true" className="w-4 h-4" />
                           </button>
-                          <span className="w-12 text-center font-mono text-xs font-bold text-slate-900 tabular-nums">
+                          <span className="w-14 text-center font-mono text-xs font-bold text-slate-900 tabular-nums">
                             {weight} suất
                           </span>
                           <button
@@ -1042,17 +1117,28 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                   <div className="divide-y divide-slate-100 border border-slate-200 rounded-md overflow-hidden bg-white">
                     {activeMembers.map((m) => {
                       const val = exactMap[m.id] || 0;
+                      const groupSize = memberGroupWeights[m.id] || 1;
+                      const perPerson =
+                        groupSize > 1 && val > 0 ? splitPerGroupMember(val, groupSize) : null;
                       return (
                         <div
                           key={m.id}
                           className="min-h-[48px] px-3.5 py-2 flex items-center justify-between gap-3"
                         >
-                          <label
-                            htmlFor={`exact-${m.id}`}
-                            className="text-sm font-semibold text-slate-900 shrink-0"
-                          >
-                            {m.name}
-                          </label>
+                          <div className="min-w-0">
+                            <label
+                              htmlFor={`exact-${m.id}`}
+                              className="text-sm font-semibold text-slate-900 block truncate"
+                            >
+                              {m.name}
+                            </label>
+                            {perPerson && (
+                              <div className="text-[10px] font-mono text-brand font-semibold tabular-nums">
+                                {perPerson.isExact ? '' : '~'}
+                                {formatVND(perPerson.perPerson, false)}/người (÷{groupSize})
+                              </div>
+                            )}
+                          </div>
                           <input
                             id={`exact-${m.id}`}
                             name={`exact-${m.id}`}
@@ -1062,7 +1148,7 @@ export const ExpenseFormModal: React.FC<ExpenseFormModalProps> = ({
                             value={val > 0 ? String(val) : ''}
                             onChange={(e) => handleExactMemberInput(m.id, e.target.value)}
                             placeholder="0…"
-                            className="w-36 min-h-[36px] px-3 py-1 rounded-sm border border-slate-300 text-right font-mono text-sm font-semibold text-slate-900 tabular-nums"
+                            className="w-36 min-h-[36px] px-3 py-1 rounded-sm border border-slate-300 text-right font-mono text-sm font-semibold text-slate-900 tabular-nums shrink-0"
                           />
                         </div>
                       );

@@ -12,6 +12,79 @@ export function hashString(str: string): number {
   return hash >>> 0;
 }
 
+const LEADING_GROUP_SIZE_REGEX = /^\s*(\d+)[\s\-_]+\S/;
+const MAX_GROUP_SIZE = 999;
+
+/**
+ * Phân tích số lượng thành viên trong 1 username gộp theo quy tắc bắt đầu bằng số.
+ * Ví dụ: "10 thành viên" -> 10, "5 mem" -> 5, "03 bạn" -> 3.
+ * Trả về 1 nếu là thành viên đơn lẻ (hoặc số <= 1 / vượt ngưỡng 999 như năm "2026 Team").
+ */
+export function parseMemberGroupSize(name: string): number {
+  const match = String(name || '').match(LEADING_GROUP_SIZE_REGEX);
+  if (!match) return 1;
+  const parsed = parseInt(match[1], 10);
+  if (!Number.isFinite(parsed) || parsed < 2 || parsed > MAX_GROUP_SIZE) {
+    return 1;
+  }
+  return parsed;
+}
+
+/**
+ * Lấy số suất / số người đại diện của 1 Member (mặc định 1, hoặc xx nếu tên bắt đầu bằng số).
+ */
+export function getMemberGroupSize(member?: Pick<Member, 'name'> | null): number {
+  if (!member) return 1;
+  return parseMemberGroupSize(member.name);
+}
+
+/**
+ * Tổng số người thực tế trong đoàn (cộng dồn headcount của tất cả thành viên đang active).
+ */
+export function getTotalHeadcount(
+  members: Array<Pick<Member, 'name' | 'active'>>
+): number {
+  return members
+    .filter((m) => m.active !== false)
+    .reduce((sum, m) => sum + getMemberGroupSize(m), 0);
+}
+
+/**
+ * Tổng số người tham gia thực tế của 1 khoản chi dựa trên bản đồ splits và danh sách thành viên.
+ */
+export function getExpenseParticipantHeadcount(
+  splits: Record<string, number> | undefined,
+  memberMap: Map<string, Pick<Member, 'name'>>
+): number {
+  if (!splits) return 0;
+  let total = 0;
+  for (const [id, val] of Object.entries(splits)) {
+    if (Math.round(val || 0) > 0) {
+      total += getMemberGroupSize(memberMap.get(id));
+    }
+  }
+  return total;
+}
+
+/**
+ * Chia đều tổng tiền của 1 username gộp cho xx người trong nhóm để ra số tiền mỗi người chịu/chuyển.
+ */
+export function splitPerGroupMember(
+  totalAmount: number,
+  groupSize: number
+): { total: number; groupSize: number; perPerson: number; isExact: boolean } {
+  const cleanTotal = Math.round(totalAmount || 0);
+  const cleanSize = Math.max(1, Math.round(groupSize || 1));
+  const absPerPerson = Math.round(Math.abs(cleanTotal) / cleanSize);
+  const perPerson = absPerPerson === 0 ? 0 : cleanTotal < 0 ? -absPerPerson : absPerPerson;
+  return {
+    total: cleanTotal,
+    groupSize: cleanSize,
+    perPerson,
+    isExact: cleanTotal % cleanSize === 0,
+  };
+}
+
 /**
  * Chia đều số nguyên tuyệt đối (VND) theo Largest Remainder Method
  * kết hợp xoay vòng vị trí bắt đầu bằng hashString(expenseId) % k.
@@ -47,6 +120,36 @@ export function splitEqual(
   }
 
   return result;
+}
+
+/**
+ * Chia đều có tính đến username gộp nhóm (mỗi username gộp "xx thành viên" tự động chịu xx phần).
+ * Nếu tất cả thành viên được chọn đều có trọng số = 1 thì trả về kết quả y hệt splitEqual.
+ */
+export function splitEqualWeighted(
+  total: number,
+  memberIds: string[],
+  memberWeights: Record<string, number>,
+  expenseId: string
+): Record<string, number> {
+  const uniqueIds = Array.from(new Set(memberIds)).sort();
+  if (uniqueIds.length === 0) return {};
+
+  let hasMultiMemberGroup = false;
+  const weights: Record<string, number> = {};
+  for (const id of uniqueIds) {
+    const w = Math.max(1, Math.round(memberWeights[id] || 1));
+    weights[id] = w;
+    if (w > 1) {
+      hasMultiMemberGroup = true;
+    }
+  }
+
+  if (!hasMultiMemberGroup) {
+    return splitEqual(total, uniqueIds, expenseId);
+  }
+
+  return splitByShares(total, weights, expenseId);
 }
 
 /**

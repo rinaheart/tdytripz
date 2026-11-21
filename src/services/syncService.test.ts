@@ -5,18 +5,23 @@ import type { ExpenseRecord, SyncQueueItem } from '../types';
 import { normalizeSearchText } from '../utils/format';
 import { calculateBalances, calculatePairwiseDebts, simplifyDebts } from '../utils/math';
 import { buildExpenseReportData, formatMemberBankInfo } from '../utils/pdfReportData';
+import { GOOGLE_APPS_SCRIPT_CODE } from '../assets/gasCode';
 import {
+  archiveAndStartNewTrip,
   canMemberModifyExpense,
   changeAdminPin,
   enqueueExpenseUpsert,
+  fetchArchivedTripByCode,
   getExpenseOwnerId,
   isEquivalentExpensePayload,
   isNonRetryableSyncError,
   isValidGasExecUrl,
+  listArchivedTrips,
   loadAppState,
   loadSyncQueue,
   mergeRemoteAndLocalExpenses,
   normalizeMembersList,
+  normalizeTripCode,
   processSyncQueue,
   pruneSatisfiedQueueItems,
   resetToDemoData,
@@ -834,5 +839,186 @@ test('Final Review [Section 3 & 5]: 8-step TRIP_COMPLETED lock safety, nonRetrya
   );
   assert.equal(httpCalls, 1, 'No further network write requests should be sent once trip is completed');
 });
+
+test('Trip Archive & Lookup [Phase 1]: normalizeTripCode sanitizes Vietnamese, symbols, and length', () => {
+  assert.equal(normalizeTripCode('Đà Lạt 2026'), 'DA-LAT-2026');
+  assert.equal(normalizeTripCode('  hn_2026!!  '), 'HN_2026');
+  assert.equal(normalizeTripCode('Phú Quốc / Team Building 2026'), 'PHU-QUOC-TEAM-BUILDING-2026');
+  assert.equal(normalizeTripCode('   ---   '), 'TRIP');
+  assert.equal(normalizeTripCode('A'.repeat(50)).length, 32);
+});
+
+test('Trip Archive & Lookup [Phase 2]: Admin PIN gate, pending queue blocker, archive & lookup lifecycle (Local Mode)', async () => {
+  setupMockBrowserEnv();
+  setGasUrl('');
+  const initialState = resetToDemoData();
+  const initialExpenseCount = initialState.expenses.filter((e) => !e.deleted && e.type !== 'transfer').length;
+  const initialMemberCount = initialState.members.length;
+  assert.ok(initialExpenseCount > 0, 'Demo trip should start with expenses');
+
+  // 1. Reject empty or wrong Admin PIN
+  const noPinRes = await archiveAndStartNewTrip('', 'mem_duy', initialState, {
+    archiveCode: 'HN-2026',
+    newTripName: 'Đà Lạt 2026',
+    newTripId: 'DA-LAT-2026',
+    newLocation: 'Đà Lạt',
+    newStartDate: '2026-12-01',
+    newEndDate: '2026-12-04',
+    keepMembers: true,
+    keepCategories: true,
+  });
+  assert.equal(noPinRes.ok, false);
+
+  const wrongPinRes = await archiveAndStartNewTrip('9999', 'mem_duy', initialState, {
+    archiveCode: 'HN-2026',
+    newTripName: 'Đà Lạt 2026',
+    newTripId: 'DA-LAT-2026',
+    newLocation: 'Đà Lạt',
+    newStartDate: '2026-12-01',
+    newEndDate: '2026-12-04',
+    keepMembers: true,
+    keepCategories: true,
+  });
+  assert.equal(wrongPinRes.ok, false);
+
+  // 2. Block archiving if pending syncQueue items exist
+  enqueueExpenseUpsert(makeExpense({ id: 'exp_unsynced_block', title: 'Chưa đồng bộ' }), 0);
+  const blockedRes = await archiveAndStartNewTrip('1234', 'mem_duy', initialState, {
+    archiveCode: 'HN-2026',
+    newTripName: 'Đà Lạt 2026',
+    newTripId: 'DA-LAT-2026',
+    newLocation: 'Đà Lạt',
+    newStartDate: '2026-12-01',
+    newEndDate: '2026-12-04',
+    keepMembers: true,
+    keepCategories: true,
+  });
+  assert.equal(blockedRes.ok, false);
+  assert.ok(blockedRes.error?.includes('chưa đồng bộ'));
+  saveSyncQueue([]);
+
+  // 3. Archive & create new trip with valid Admin PIN (keepMembers = true)
+  const archivedRes = await archiveAndStartNewTrip('1234', 'mem_duy', initialState, {
+    archiveCode: 'hn 2026',
+    newTripName: 'Đà Lạt 2026',
+    newTripId: 'da lat 2026',
+    newLocation: 'Đà Lạt',
+    newStartDate: '2026-12-01',
+    newEndDate: '2026-12-04',
+    keepMembers: true,
+    keepCategories: true,
+  });
+  assert.equal(archivedRes.ok, true);
+  assert.equal(archivedRes.archiveSummary?.archiveCode, 'HN-2026');
+  assert.equal(archivedRes.archiveSummary?.expenseCount, initialExpenseCount);
+  assert.equal(archivedRes.nextState?.config.tripName, 'Đà Lạt 2026');
+  assert.equal(archivedRes.nextState?.config.tripId, 'DA-LAT-2026');
+  assert.equal(archivedRes.nextState?.config.tripStatus, 'active');
+  assert.equal(archivedRes.nextState?.expenses.length, 0);
+  assert.equal(archivedRes.nextState?.members.length, initialMemberCount);
+
+  // 4. Archive a second time with same code -> unique suffix HN-2026-2, keepMembers = false
+  const secondState = loadAppState();
+  const secondArchive = await archiveAndStartNewTrip('1234', 'mem_duy', secondState, {
+    archiveCode: 'HN-2026',
+    newTripName: 'Phú Quốc 2027',
+    newTripId: 'PQ-2027',
+    newLocation: 'Phú Quốc',
+    newStartDate: '2027-01-10',
+    newEndDate: '2027-01-14',
+    keepMembers: false,
+    keepCategories: false,
+  });
+  assert.equal(secondArchive.ok, true);
+  assert.equal(secondArchive.archiveSummary?.archiveCode, 'HN-2026-2');
+  assert.equal(secondArchive.nextState?.members.length, 1, 'Resetting members leaves only the admin member');
+
+  // 5. listArchivedTrips & fetchArchivedTripByCode enforce Admin PIN
+  const listDenied = await listArchivedTrips('');
+  assert.equal(listDenied.ok, false);
+  const listWrong = await listArchivedTrips('0000');
+  assert.equal(listWrong.ok, false);
+
+  const listOk = await listArchivedTrips('1234');
+  assert.equal(listOk.ok, true);
+  assert.equal(listOk.archives?.length, 2);
+
+  const fetchDenied = await fetchArchivedTripByCode('', 'HN-2026');
+  assert.equal(fetchDenied.ok, false);
+  const fetchWrong = await fetchArchivedTripByCode('0000', 'HN-2026');
+  assert.equal(fetchWrong.ok, false);
+
+  // Case-insensitive lookup by archiveCode
+  const fetchOk = await fetchArchivedTripByCode('1234', 'hn-2026');
+  assert.equal(fetchOk.ok, true);
+  assert.equal(fetchOk.snapshot?.summary.archiveCode, 'HN-2026');
+  assert.equal(fetchOk.snapshot?.config.tripStatus, 'completed');
+  assert.equal(fetchOk.snapshot?.expenses.length, initialState.expenses.length);
+
+  // Missing code returns clear error
+  const fetchMissing = await fetchArchivedTripByCode('1234', 'KHONG-TON-TAI');
+  assert.equal(fetchMissing.ok, false);
+  assert.ok(fetchMissing.error?.includes('Không tìm thấy'));
+});
+
+test('Trip Archive & Lookup [Phase 3]: GAS Mode UNKNOWN_ACTION guidance & Code.gs Admin PIN security contract', async () => {
+  setupMockBrowserEnv();
+  const validUrl = 'https://script.google.com/macros/s/AKfycbz_archive_contract/exec';
+  setGasUrl(validUrl);
+  const state = resetToDemoData();
+
+  globalThis.fetch = (async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      ok: false,
+      error: 'UNKNOWN_ACTION',
+    }),
+  })) as any;
+
+  const outdatedRes = await listArchivedTrips('1234');
+  assert.equal(outdatedRes.ok, false);
+  assert.ok(
+    outdatedRes.error?.includes('Code.gs'),
+    'Old GAS deployments must guide Admin to re-copy & re-deploy Code.gs'
+  );
+
+  const outdatedArchiveRes = await archiveAndStartNewTrip('1234', 'mem_duy', state, {
+    archiveCode: 'HN-2026',
+    newTripName: 'Đà Lạt 2026',
+    newTripId: 'DA-LAT-2026',
+    newLocation: 'Đà Lạt',
+    newStartDate: '2026-12-01',
+    newEndDate: '2026-12-04',
+    keepMembers: true,
+    keepCategories: true,
+  });
+  assert.equal(outdatedArchiveRes.ok, false);
+  assert.ok(outdatedArchiveRes.error?.includes('Code.gs'));
+
+  // Contract check on generated Google Apps Script source
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("Archives: ["));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("SCHEMA_CACHE_KEY = 'SCHEMA_READY_V3'"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("if (action === 'archiveAndStartNewTrip')"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("if (action === 'listArchivedTrips')"));
+  assert.ok(GOOGLE_APPS_SCRIPT_CODE.includes("if (action === 'getArchivedTrip')"));
+
+  // Verify every archive action branch in doPost enforces brute-force lockout & Admin PIN
+  for (const actionName of ['archiveAndStartNewTrip', 'listArchivedTrips', 'getArchivedTrip']) {
+    const marker = `if (action === '${actionName}')`;
+    const startIdx = GOOGLE_APPS_SCRIPT_CODE.indexOf(marker);
+    assert.ok(startIdx > -1, `Code.gs doPost must handle ${actionName}`);
+    const branchBody = GOOGLE_APPS_SCRIPT_CODE.slice(startIdx, startIdx + 600);
+    assert.ok(
+      branchBody.includes('isPinLockedOut_()'),
+      `${actionName} branch must check isPinLockedOut_()`
+    );
+    assert.ok(
+      branchBody.includes('verifyPin_(body.adminPin)'),
+      `${actionName} branch must enforce Admin PIN via verifyPin_(body.adminPin)`
+    );
+  }
+});
+
 
 

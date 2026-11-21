@@ -6,6 +6,16 @@ Mọi thay đổi đáng chú ý của dự án **TdyTrip** đều được ghi 
 
 ---
 
+## [v2026.11.21_13.26] - 2026-11-21
+
+### Added
+- **Hỗ trợ Username gộp nhóm bắt đầu bằng số (`xx thành viên`, `xx mem`, ...):**
+  - **Nhận diện tự động (`src/utils/math.ts`, `src/services/syncService.ts`, `src/components/SettingsTab.tsx`):** Tự động phân tích quy tắc username bắt đầu bằng số nguyên `2..999` kèm khoảng trắng/`-`/`_` (VD: `"10 thành viên"`, `"5 mem"`, `"03 bạn"`) để gán trọng số `xx` phần/suất, đồng bộ `defaultWeight` tự động mà không cần thay đổi schema Google Sheet, hiển thị đầy đủ số lượng trên Avatar (`10`, `99+`) và xem trước nhận diện nhóm khi thêm thành viên.
+  - **Chia khoản chi tự động theo `xx` suất (`src/components/ExpenseFormModal.tsx`):** Chế độ **Chia đều** tự động chia theo trọng số `xx` suất (`splitEqualWeighted`, bảo toàn 100% tổng số nguyên VND), hiển thị tổng suất thực (`Chọn 12/12 suất`), nhãn `×xx suất` và mức quy đổi `/người`; chế độ **Theo suất** mặc định sẵn `xx` suất; chế độ **Nhập số** hiển thị xem trước `÷xx`.
+  - **Quyết toán & Báo cáo PDF chia đều theo `xx` (`src/components/SettlementTab.tsx`, `src/components/OverviewTab.tsx`, `src/components/ExpensesTab.tsx`, `src/utils/pdfReportData.ts`, `src/utils/pdf/*`):** Thẻ chuyển khoản (`Tối giản` & `Từng cặp`) làm nổi bật số tiền mỗi người cần chuyển (`÷xx`), kèm tổng nhóm và nút **Copy / người**; Bảng cân đối hiển thị đồng thời tổng nhóm và đơn giá `/ng`; Tổng quan, Chi tiêu, Cài đặt và Báo cáo PDF đồng bộ tổng quân số thực (`n1 + n2`) và mức bình quân `/người`.
+
+---
+
 ## [v2026.11.04_10.30] - 2026-11-04
 
 ### Changed

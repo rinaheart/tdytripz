@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tdytime-pwa-v2026.11.04_09.15';
+const CACHE_NAME = 'tdytime-pwa-v2026.11.21_13.26';
 const PRECACHE_URLS = [
   '/',
   '/index.html',

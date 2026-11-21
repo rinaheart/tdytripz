@@ -22,6 +22,7 @@ import {
   formatVND,
   getTripDurationShort,
 } from '../utils/format';
+import { getMemberGroupSize, getTotalHeadcount, splitPerGroupMember } from '../utils/math';
 import { MemberAvatar } from './MemberAvatar';
 import type { ActiveTab } from './Navbar';
 
@@ -72,7 +73,7 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   );
 
   const activeMemberCount = useMemo(
-    () => Math.max(1, members.filter((m) => m.active).length),
+    () => Math.max(1, getTotalHeadcount(members)),
     [members]
   );
 
@@ -86,6 +87,27 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
   const currentMember = useMemo(
     () => members.find((m) => m.id === currentUserId) || null,
     [members, currentUserId]
+  );
+
+  const currentMemberGroupSize = useMemo(
+    () => getMemberGroupSize(currentMember),
+    [currentMember]
+  );
+
+  const myPerPersonBalance = useMemo(
+    () =>
+      myBalance && currentMemberGroupSize > 1
+        ? splitPerGroupMember(myBalance.balance, currentMemberGroupSize)
+        : null,
+    [myBalance, currentMemberGroupSize]
+  );
+
+  const myPerPersonOwed = useMemo(
+    () =>
+      myBalance && currentMemberGroupSize > 1
+        ? splitPerGroupMember(myBalance.owedExpense, currentMemberGroupSize)
+        : null,
+    [myBalance, currentMemberGroupSize]
   );
 
   const categoryStats = useMemo(() => {
@@ -238,23 +260,47 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
 
           <div className="flex items-baseline justify-between gap-2 py-0.5">
             <span className="text-xs font-semibold text-slate-500 shrink-0">
-              {myBalance.balance > 0
+              {myPerPersonBalance
+                ? myBalance.balance > 0
+                  ? 'Mỗi người nhận'
+                  : myBalance.balance < 0
+                  ? 'Mỗi người trả'
+                  : 'Số dư mỗi người'
+                : myBalance.balance > 0
                 ? 'Tổng cần nhận'
                 : myBalance.balance < 0
                 ? 'Tổng cần trả'
                 : 'Số dư hiện tại'}
             </span>
-            <div
-              className={`text-2xl sm:text-[26px] leading-none font-mono font-extrabold tabular-nums text-right ml-auto ${
-                myBalance.balance > 0
-                  ? 'text-emerald-700'
-                  : myBalance.balance < 0
-                  ? 'text-rose-600'
-                  : 'text-slate-800'
-              }`}
-            >
-              {myBalance.balance > 0 ? '+' : ''}
-              {formatVND(myBalance.balance, true)}
+            <div className="text-right ml-auto">
+              <div
+                className={`text-2xl sm:text-[26px] leading-none font-mono font-extrabold tabular-nums ${
+                  myBalance.balance > 0
+                    ? 'text-emerald-700'
+                    : myBalance.balance < 0
+                    ? 'text-rose-600'
+                    : 'text-slate-800'
+                }`}
+              >
+                {myPerPersonBalance ? (
+                  <>
+                    {myPerPersonBalance.isExact ? '' : '~'}
+                    {myPerPersonBalance.perPerson > 0 ? '+' : ''}
+                    {formatVND(myPerPersonBalance.perPerson, true)}
+                  </>
+                ) : (
+                  <>
+                    {myBalance.balance > 0 ? '+' : ''}
+                    {formatVND(myBalance.balance, true)}
+                  </>
+                )}
+              </div>
+              {myPerPersonBalance && (
+                <div className="mt-1 text-[11px] font-mono font-semibold text-slate-500 tabular-nums">
+                  Tổng nhóm ({currentMemberGroupSize} người): {myBalance.balance > 0 ? '+' : ''}
+                  {formatVND(myBalance.balance, true)}
+                </div>
+              )}
             </div>
           </div>
 
@@ -268,7 +314,9 @@ export const OverviewTab: React.FC<OverviewTabProps> = React.memo(({
             <div className="min-w-0 text-right">
               <span className="text-slate-500">Phải chịu: </span>
               <strong className="font-mono font-bold text-slate-800 tabular-nums">
-                {formatVND(myBalance.owedExpense, false)}
+                {myPerPersonOwed
+                  ? `${myPerPersonOwed.isExact ? '' : '~'}${formatVND(myPerPersonOwed.perPerson, false)}/ng`
+                  : formatVND(myBalance.owedExpense, false)}
               </strong>
             </div>
           </div>

@@ -26,6 +26,11 @@ import {
   formatVND,
   normalizeSearchText,
 } from '../utils/format';
+import {
+  getExpenseParticipantHeadcount,
+  getMemberGroupSize,
+  splitPerGroupMember,
+} from '../utils/math';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
 
 interface ExpensesTabProps {
@@ -488,12 +493,20 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                     config.tripStatus
                   );
 
-                  const participantCount = Object.values(exp.splits || {}).filter(
-                    (v) => v > 0
-                  ).length;
+                  const participantCount = getExpenseParticipantHeadcount(
+                    exp.splits,
+                    memberMap
+                  );
 
                   const mySplit =
                     !isTransfer && currentUserId ? exp.splits?.[currentUserId] || 0 : 0;
+                  const currentGroupSize = currentUserId
+                    ? getMemberGroupSize(memberMap.get(currentUserId))
+                    : 1;
+                  const myPerPersonSplit =
+                    mySplit > 0 && currentGroupSize > 1
+                      ? splitPerGroupMember(mySplit, currentGroupSize)
+                      : null;
 
                   const hasSyncIssue =
                     exp.syncStatus === 'conflict' || exp.syncStatus === 'error';
@@ -611,7 +624,12 @@ export const ExpensesTab: React.FC<ExpensesTabProps> = React.memo(({
                             </span>
                           ) : mySplit > 0 ? (
                             <span className="text-brand font-semibold">
-                              Bạn: {formatVND(mySplit, false)}
+                              {myPerPersonSplit
+                                ? `Bạn: ${myPerPersonSplit.isExact ? '' : '~'}${formatVND(
+                                    myPerPersonSplit.perPerson,
+                                    false
+                                  )}/ng`
+                                : `Bạn: ${formatVND(mySplit, false)}`}
                             </span>
                           ) : (
                             <span className="text-slate-600 font-sans">Không chia</span>

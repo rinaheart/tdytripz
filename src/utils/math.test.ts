@@ -3,15 +3,22 @@ import assert from 'node:assert/strict';
 import {
   calculateBalances,
   calculatePairwiseDebts,
+  getExpenseParticipantHeadcount,
+  getMemberGroupSize,
+  getTotalHeadcount,
+  parseMemberGroupSize,
   simplifyDebts,
   splitByShares,
   splitEqual,
+  splitEqualWeighted,
+  splitPerGroupMember,
   validateExactSplits,
 } from './math';
 import {
   findDuplicateExpenseOnSameDay,
   formatCompactVND,
   formatExpensesForChat,
+  formatSettlementReportForChat,
   formatVND,
   normalizeSearchText,
   readVietnameseNumber,
@@ -383,6 +390,239 @@ test('formatExpensesForChat - tạo chuỗi văn bản định dạng gọn đ�
   // Đảm bảo nhóm Trước chuyến đi xuất hiện trước Ngày 1
   assert.ok(output.indexOf('Trước chuyến đi') < output.indexOf('Ngày 1'));
 });
+
+test('parseMemberGroupSize & headcount - nhận diện chuẩn quy tắc username gộp bắt đầu bằng số', () => {
+  assert.equal(parseMemberGroupSize('10 thành viên'), 10);
+  assert.equal(parseMemberGroupSize('5 mem'), 5);
+  assert.equal(parseMemberGroupSize('03 bạn'), 3);
+  assert.equal(parseMemberGroupSize('12-người'), 12);
+  assert.equal(parseMemberGroupSize('  8   TV  '), 8);
+  assert.equal(parseMemberGroupSize('1 thành viên'), 1);
+  assert.equal(parseMemberGroupSize('0 mem'), 1);
+  assert.equal(parseMemberGroupSize('2k5 Hùng'), 1);
+  assert.equal(parseMemberGroupSize('Duy'), 1);
+  assert.equal(parseMemberGroupSize('Duy 2'), 1);
+  assert.equal(parseMemberGroupSize('2026 Team'), 1);
+
+  const mixedMembers: Member[] = [
+    ...mockMembers.slice(0, 2), // Duy (1), Dương (1)
+    {
+      id: 'm_group10',
+      name: '10 thành viên',
+      avatarColor: '#5b21b6',
+      defaultWeight: 10,
+      bankName: '',
+      accountNo: '',
+      accountHolder: '',
+      active: true,
+    },
+    {
+      id: 'm_inactive',
+      name: '4 mem',
+      avatarColor: '#155e75',
+      defaultWeight: 4,
+      bankName: '',
+      accountNo: '',
+      accountHolder: '',
+      active: false,
+    },
+  ];
+
+  assert.equal(getMemberGroupSize(mixedMembers[2]), 10);
+  assert.equal(getTotalHeadcount(mixedMembers), 12); // 1 + 1 + 10 (bỏ qua inactive)
+});
+
+test('splitEqualWeighted & splitPerGroupMember - case n1 người chi + n2 người gộp 1 username ("10 thành viên")', () => {
+  const members12: Member[] = [
+    mockMembers[0], // Duy (1)
+    mockMembers[1], // Dương (1)
+    {
+      id: 'm_group10',
+      name: '10 thành viên',
+      avatarColor: '#5b21b6',
+      defaultWeight: 10,
+      bankName: '',
+      accountNo: '',
+      accountHolder: '',
+      active: true,
+    },
+  ];
+  const weights: Record<string, number> = {
+    m1: getMemberGroupSize(members12[0]),
+    m2: getMemberGroupSize(members12[1]),
+    m_group10: getMemberGroupSize(members12[2]),
+  };
+
+  // Khoản chi 1.200.000 ₫ do Duy trả, chia đều cả đoàn 12 người (1 + 1 + 10)
+  const splits = splitEqualWeighted(1200000, ['m1', 'm2', 'm_group10'], weights, 'exp_group_1');
+  assert.equal(splits.m1, 100000);
+  assert.equal(splits.m2, 100000);
+  assert.equal(splits.m_group10, 1000000);
+  assert.equal(
+    Object.values(splits).reduce((a, b) => a + b, 0),
+    1200000
+  );
+
+  // Số người tham gia thực tế là 12
+  const memberMap = new Map(members12.map((m) => [m.id, m]));
+  assert.equal(getExpenseParticipantHeadcount(splits, memberMap), 12);
+
+  // Khoản chi lẻ 1.000.000 ₫ chia 12 suất -> vẫn bảo toàn 100% tổng 1.000.000 ₫
+  const oddSplits = splitEqualWeighted(1000000, ['m1', 'm2', 'm_group10'], weights, 'exp_group_odd');
+  assert.equal(
+    Object.values(oddSplits).reduce((a, b) => a + b, 0),
+    1000000
+  );
+  assert.ok(oddSplits.m1 === 83333 || oddSplits.m1 === 83334);
+  assert.ok(oddSplits.m2 === 83333 || oddSplits.m2 === 83334);
+  assert.ok(oddSplits.m_group10 === 833333 || oddSplits.m_group10 === 833334);
+
+  // Quyết toán cuối: tổng 2 khoản chi (Duy trả 1.200.000 + Dương trả 600.000 = 1.800.000 => 150.000/người)
+  const splits2 = splitEqualWeighted(600000, ['m1', 'm2', 'm_group10'], weights, 'exp_group_2');
+  const expenses: ExpenseRecord[] = [
+    {
+      id: 'exp_group_1',
+      rev: 1,
+      type: 'expense',
+      title: 'Tiệc tối',
+      amount: 1200000,
+      payer: 'm1',
+      splits,
+      splitMode: 'equal',
+      categoryId: 'cat_food',
+      spentAt: '2026-10-23 19:00',
+      createdBy: 'm1',
+      createdAt: '2026-10-23 19:00:00',
+      updatedBy: 'm1',
+      updatedAt: '2026-10-23 19:00:00',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: 'exp_group_2',
+      rev: 1,
+      type: 'expense',
+      title: 'Xe đưa đón',
+      amount: 600000,
+      payer: 'm2',
+      splits: splits2,
+      splitMode: 'equal',
+      categoryId: 'cat_move',
+      spentAt: '2026-10-23 20:00',
+      createdBy: 'm2',
+      createdAt: '2026-10-23 20:00:00',
+      updatedBy: 'm2',
+      updatedAt: '2026-10-23 20:00:00',
+      deleted: false,
+      note: '',
+    },
+  ];
+
+  const balances = calculateBalances(members12, expenses);
+  assert.equal(
+    balances.reduce((s, b) => s + b.balance, 0),
+    0
+  );
+  const groupBal = balances.find((b) => b.memberId === 'm_group10')!;
+  assert.equal(groupBal.owedExpense, 1500000);
+  assert.equal(groupBal.balance, -1500000);
+
+  // Chia đều cho 10 người trong nhóm: mỗi người chịu 150.000 ₫
+  const perPersonBal = splitPerGroupMember(groupBal.balance, 10);
+  assert.equal(perPersonBal.perPerson, -150000);
+  assert.equal(perPersonBal.isExact, true);
+
+  // Tối giản công nợ: "10 thành viên" chuyển cho Duy (1.050.000 => 105.000/người) và Dương (450.000 => 45.000/người)
+  const debts = simplifyDebts(balances);
+  assert.equal(debts.length, 2);
+  const toDuy = debts.find((d) => d.toMemberId === 'm1')!;
+  const toDuong = debts.find((d) => d.toMemberId === 'm2')!;
+  assert.equal(toDuy.amount, 1050000);
+  assert.equal(splitPerGroupMember(toDuy.amount, 10).perPerson, 105000);
+  assert.equal(toDuong.amount, 450000);
+  assert.equal(splitPerGroupMember(toDuong.amount, 10).perPerson, 45000);
+  // Tổng mỗi người trong nhóm "10 thành viên" chuyển = 105k + 45k = 150k (khớp tuyệt đối!)
+  assert.equal(
+    splitPerGroupMember(toDuy.amount, 10).perPerson +
+      splitPerGroupMember(toDuong.amount, 10).perPerson,
+    150000
+  );
+});
+
+test('formatSettlementReportForChat - xuất báo cáo nhanh gọn nhẹ cho Zalo/Messenger hỗ trợ nhóm gộp', () => {
+  const membersWithGroup: Member[] = [
+    { ...mockMembers[0], id: 'm1', name: 'Duy', accountNo: '00123456', bankName: 'MB', accountHolder: 'NGUYEN DUY' },
+    { ...mockMembers[1], id: 'm2', name: 'Dương', accountNo: '654321', bankName: 'VCB', accountHolder: '' },
+    {
+      id: 'm_g10',
+      name: '10 thành viên',
+      avatarColor: '#92400e',
+      bankName: '',
+      accountNo: '',
+      accountHolder: '',
+      active: true,
+      defaultWeight: 10,
+    },
+  ];
+  const expenses: ExpenseRecord[] = [
+    {
+      id: 'exp-quick-1',
+      type: 'expense',
+      title: 'Tiệc tổng kết',
+      amount: 1200000,
+      payer: 'm1',
+      categoryId: 'cat_food',
+      spentAt: '2026-11-20 19:00',
+      splitMode: 'equal',
+      splits: { m1: 100000, m2: 100000, m_g10: 1000000 },
+      splitMeta: { selectedMembers: ['m1', 'm2', 'm_g10'] },
+      createdBy: 'm1',
+      createdAt: '2026-11-20 19:00:00',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-20 19:00:00',
+      rev: 1,
+      deleted: false,
+      note: '',
+    },
+  ];
+
+  const balances = calculateBalances(membersWithGroup, expenses);
+  const transactions = simplifyDebts(balances);
+
+  const report = formatSettlementReportForChat({
+    config: {
+      tripName: 'Team Building',
+      location: 'Đà Lạt',
+      startDate: '2026-11-20',
+      endDate: '2026-11-22',
+    },
+    members: membersWithGroup,
+    expenses,
+    balances,
+    transactions,
+    viewMode: 'simplified',
+  });
+
+  assert.match(report, /📊 QUYẾT TOÁN: Team Building - Đà Lạt \(20–22\/11\/2026\)/);
+  assert.match(report, /Tổng chi: 1\.200\.000\u00A0₫ \(1 khoản\) • 12 người/);
+  assert.match(report, /Bình quân: ~100\.000\u00A0₫\/người/);
+  assert.match(report, /💸 CẦN CHUYỂN \(Tối giản - 2 khoản\):/);
+  assert.match(report, /10 thành viên → Duy: 100\.000\u00A0₫\/người \(Tổng 10 người: 1\.000\.000\u00A0₫\)/);
+  assert.match(report, /STK: 00123456 \(MB\) - NGUYEN DUY/);
+  assert.match(report, /• 10 thành viên \(÷10\): Chi 0 \| Chịu 1\.000\.000 \(100\.000\/ng\) \| -1\.000\.000 \(-100\.000\/ng\)/);
+
+  // Trường hợp không có khoản nợ nào (cân bằng)
+  const emptyReport = formatSettlementReportForChat({
+    config: { tripName: 'Chuyến đi cân bằng' },
+    members: membersWithGroup.slice(0, 2),
+    expenses: [],
+    balances: calculateBalances(membersWithGroup.slice(0, 2), []),
+    transactions: [],
+    viewMode: 'pairwise',
+  });
+  assert.match(emptyReport, /✅ CẦN CHUYỂN: Không có khoản nợ nào/);
+});
+
 
 
 

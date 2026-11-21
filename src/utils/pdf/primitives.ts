@@ -1,4 +1,5 @@
 import type { jsPDF } from 'jspdf';
+import { parseMemberGroupSize } from '../math';
 import {
   type BannerPalette,
   CARD_RADIUS,
@@ -150,11 +151,18 @@ export function drawMemberAvatarCircle(
   doc.setFillColor(rgb[0], rgb[1], rgb[2]);
   doc.circle(centerX, centerY, radiusMm, 'F');
 
-  const initial = (memberName || '?').trim().charAt(0).toUpperCase();
+  const groupSize = parseMemberGroupSize(memberName);
+  const badgeText =
+    groupSize > 1
+      ? groupSize <= 99
+        ? String(groupSize)
+        : '99+'
+      : (memberName || '?').trim().charAt(0).toUpperCase();
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(Math.max(5.2, radiusMm * 2.95));
+  const scale = groupSize >= 100 ? 1.95 : groupSize >= 10 ? 2.3 : 2.95;
+  doc.setFontSize(Math.max(4.8, radiusMm * scale));
   doc.setTextColor(255, 255, 255);
-  doc.text(initial, centerX, centerY + radiusMm * 0.36, { align: 'center' });
+  doc.text(badgeText, centerX, centerY + radiusMm * 0.34, { align: 'center' });
 }
 
 /**

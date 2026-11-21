@@ -1,5 +1,6 @@
 import React from 'react';
 import type { Member } from '../types';
+import { getMemberGroupSize } from '../utils/math';
 
 interface AvatarPaletteItem {
   hex: string;
@@ -93,19 +94,30 @@ export const MemberAvatar: React.FC<MemberAvatarProps> = React.memo(({
   className = '',
 }) => {
   const palette = resolveMemberAvatarPalette(member);
-  const initial = (member.name || '?').trim().charAt(0).toUpperCase() || '?';
+  const groupSize = getMemberGroupSize(member);
+  const badgeText =
+    groupSize > 1
+      ? groupSize <= 99
+        ? String(groupSize)
+        : '99+'
+      : (member.name || '?').trim().charAt(0).toUpperCase() || '?';
 
   return (
     <div
       aria-hidden="true"
-      className={`${SIZE_CLASSES[size]} ${palette.bgClass} text-white rounded-full flex items-center justify-center font-extrabold shrink-0 select-none ring-1 ring-inset ring-black/15 shadow-2xs ${className}`}
+      className={`${SIZE_CLASSES[size]} ${palette.bgClass} text-white rounded-full flex items-center justify-center font-extrabold shrink-0 select-none ring-1 ring-inset ring-black/15 shadow-2xs ${
+        groupSize >= 10 ? 'tracking-tighter' : ''
+      } ${className}`}
       style={{
         backgroundColor: palette.hex,
         color: '#ffffff',
       }}
     >
-      <span className="leading-none" style={{ color: '#ffffff' }}>
-        {initial}
+      <span
+        className={`leading-none ${groupSize >= 100 ? 'text-[9px]' : ''}`}
+        style={{ color: '#ffffff' }}
+      >
+        {badgeText}
       </span>
     </div>
   );

@@ -20,15 +20,18 @@ import { APP_VERSION } from './config';
 import { useModalAccessibility } from './hooks/useModalAccessibility';
 import { usePWAInstall } from './hooks/usePWAInstall';
 import {
+  archiveAndStartNewTrip,
   canMemberModifyExpense,
   changeAdminPin,
   enqueueExpenseUpsert,
   fetchAllFromGas,
+  fetchArchivedTripByCode,
   getCurrentUserId,
   getExpenseOwnerId,
   getGasUrl,
   getSimulateOffline,
   initializeSheetWithCurrentData,
+  listArchivedTrips,
   loadAppState,
   loadSyncQueue,
   mergeRemoteAndLocalExpenses,
@@ -119,6 +122,8 @@ const PWAInstallModal = lazyWithRetry(() =>
 );
 import type {
   AppStateData,
+  ArchiveAndNewTripPayload,
+  ArchivedTripSnapshot,
   Category,
   ExpenseRecord,
   Member,
@@ -175,6 +180,7 @@ export default function App() {
 
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [adminPin, setAdminPin] = useState<string>('');
+  const [viewingArchive, setViewingArchive] = useState<ArchivedTripSnapshot | null>(null);
 
   const [isDarkMode, setIsDarkMode] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -330,9 +336,15 @@ export default function App() {
     }
   }, [appState.members, currentUserId]);
 
+  const displayConfig = viewingArchive ? viewingArchive.config : appState.config;
+  const displayMembers = viewingArchive ? viewingArchive.members : appState.members;
+  const displayCategories = viewingArchive ? viewingArchive.categories : appState.categories;
+  const displayExpenses = viewingArchive ? viewingArchive.expenses : appState.expenses;
+  const isReadOnlyTrip = Boolean(viewingArchive) || displayConfig.tripStatus === 'completed';
+
   const balances = useMemo(
-    () => calculateBalances(appState.members, appState.expenses),
-    [appState.members, appState.expenses]
+    () => calculateBalances(displayMembers, displayExpenses),
+    [displayMembers, displayExpenses]
   );
 
   const effectiveOnline = isOnline && !simulateOffline;
@@ -848,16 +860,48 @@ export default function App() {
           </button>
         )}
 
-        {appState.config.tripStatus === 'completed' && (
+        {viewingArchive ? (
           <div
             role="status"
-            className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center justify-center gap-2 text-xs text-center shadow-sm"
+            className="p-3.5 rounded-2xl bg-slate-900 text-white flex flex-wrap items-center justify-between gap-2.5 text-xs shadow-sm"
           >
-            <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
-            <span>
-              <strong>Chuyến đi đã kết thúc</strong> — Chế độ chỉ xem.
-            </span>
+            <div className="flex items-center gap-2 min-w-0">
+              <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-bold">Đang xem chuyến lưu trữ</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white/15 font-mono text-[10.5px] font-bold text-blue-200">
+                    {viewingArchive.summary.archiveCode}
+                  </span>
+                </div>
+                <div className="text-[11px] text-slate-300 truncate">
+                  {viewingArchive.config.tripName} · Chế độ chỉ xem
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setViewingArchive(null);
+                showToast(`Đã quay lại chuyến hiện tại: ${appState.config.tripName}`);
+              }}
+              className="min-h-[34px] px-3 py-1 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-bold shrink-0 transition-colors cursor-pointer"
+            >
+              Quay lại chuyến hiện tại
+            </button>
           </div>
+        ) : (
+          appState.config.tripStatus === 'completed' && (
+            <div
+              role="status"
+              className="p-3.5 rounded-2xl bg-slate-900 text-white flex items-center justify-center gap-2 text-xs text-center shadow-sm"
+            >
+              <Archive aria-hidden="true" className="w-4 h-4 text-blue-300 shrink-0" />
+              <span>
+                <strong>Chuyến đi đã kết thúc</strong> — Chế độ chỉ xem.
+              </span>
+            </div>
+          )
         )}
 
         {syncQueue.length > 0 && (
@@ -959,16 +1003,20 @@ export default function App() {
 
         {activeTab === 'overview' && (
           <OverviewTab
-            config={appState.config}
-            members={appState.members}
-            categories={appState.categories}
-            expenses={appState.expenses}
+            config={displayConfig}
+            members={displayMembers}
+            categories={displayCategories}
+            expenses={displayExpenses}
             balances={balances}
             currentUserId={currentUserId}
             onNavigateTab={setActiveTab}
             onOpenAddModal={() => {
-              if (appState.config.tripStatus === 'completed') {
-                showToast('Chuyến đi đã khóa sổ — Chế độ chỉ xem.');
+              if (isReadOnlyTrip) {
+                showToast(
+                  viewingArchive
+                    ? 'Đang xem chuyến lưu trữ (Chỉ xem). Bấm "Quay lại chuyến hiện tại" để ghi chi tiêu.'
+                    : 'Chuyến đi đã khóa sổ — Chế độ chỉ xem.'
+                );
                 return;
               }
               setEditingRecord(null);
@@ -987,23 +1035,31 @@ export default function App() {
           >
           {activeTab === 'expenses' && (
             <ExpensesTab
-              config={appState.config}
-              members={appState.members}
-              categories={appState.categories}
-              expenses={appState.expenses}
+              config={displayConfig}
+              members={displayMembers}
+              categories={displayCategories}
+              expenses={displayExpenses}
               currentUserId={currentUserId}
-              isAdmin={isAdmin}
+              isAdmin={isAdmin && !viewingArchive}
               onEditRecord={(rec) => {
-                if (appState.config.tripStatus === 'completed') {
-                  showToast('Chuyến đi đã khóa sổ — Chế độ chỉ xem.');
+                if (isReadOnlyTrip) {
+                  showToast(
+                    viewingArchive
+                      ? 'Đang xem chuyến lưu trữ — Không thể chỉnh sửa.'
+                      : 'Chuyến đi đã khóa sổ — Chế độ chỉ xem.'
+                  );
                   return;
                 }
                 setEditingRecord(rec);
                 setIsExpenseModalOpen(true);
               }}
               onRequestAdminUnlock={(rec) => {
-                if (appState.config.tripStatus === 'completed') {
-                  showToast('Chuyến đi đã khóa sổ (Chế độ chỉ xem). Mở khóa trong Cài đặt nếu cần sửa.');
+                if (isReadOnlyTrip) {
+                  showToast(
+                    viewingArchive
+                      ? 'Đang xem chuyến lưu trữ — Chỉ được xem, không thể chỉnh sửa.'
+                      : 'Chuyến đi đã khóa sổ (Chế độ chỉ xem). Mở khóa trong Cài đặt nếu cần sửa.'
+                  );
                   return;
                 }
                 setPendingAdminEditRecord(rec);
@@ -1012,8 +1068,12 @@ export default function App() {
               }}
               onSoftDeleteRecord={handleSoftDeleteExpense}
               onOpenAddModal={() => {
-                if (appState.config.tripStatus === 'completed') {
-                  showToast('Chuyến đi đã khóa sổ — Chế độ chỉ xem.');
+                if (isReadOnlyTrip) {
+                  showToast(
+                    viewingArchive
+                      ? 'Đang xem chuyến lưu trữ — Không thể thêm khoản chi.'
+                      : 'Chuyến đi đã khóa sổ — Chế độ chỉ xem.'
+                  );
                   return;
                 }
                 setEditingRecord(null);
@@ -1025,8 +1085,9 @@ export default function App() {
 
           {activeTab === 'settlement' && (
             <SettlementTab
-              members={appState.members}
-              expenses={appState.expenses}
+              config={displayConfig}
+              members={displayMembers}
+              expenses={displayExpenses}
               balances={balances}
               currentUserId={currentUserId}
               onShowToast={showToast}
@@ -1040,6 +1101,7 @@ export default function App() {
               categories={appState.categories}
               expenses={appState.expenses}
               history={appState.history}
+              viewingArchive={viewingArchive}
               isAdmin={isAdmin}
               adminPin={adminPin}
               gasUrl={gasUrl}
@@ -1060,7 +1122,61 @@ export default function App() {
               onLockAdmin={() => {
                 setIsAdmin(false);
                 setAdminPin('');
+                setViewingArchive(null);
                 showToast('Đã khóa Admin');
+              }}
+              onArchiveAndStartNewTrip={async (payload: ArchiveAndNewTripPayload) => {
+                if (!isAdmin || !adminPin) {
+                  return { ok: false, error: 'Cần mở khóa quyền Admin trước khi thực hiện.' };
+                }
+                const res = await archiveAndStartNewTrip(
+                  adminPin,
+                  currentUserId || 'admin',
+                  appState,
+                  payload
+                );
+                if (res.ok && res.nextState) {
+                  setViewingArchive(null);
+                  setAppState(res.nextState);
+                  setSyncQueue([]);
+                  if (
+                    currentUserId &&
+                    !res.nextState.members.some((m) => m.id === currentUserId) &&
+                    res.nextState.members.length > 0
+                  ) {
+                    const fallbackId = res.nextState.members[0].id;
+                    setCurrentUserId(fallbackId);
+                    setCurrentUserState(fallbackId);
+                  }
+                  showToast(
+                    `Đã lưu trữ [${res.archiveSummary?.archiveCode || payload.archiveCode}] & tạo chuyến "${res.nextState.config.tripName}"`
+                  );
+                }
+                return { ok: res.ok, archiveSummary: res.archiveSummary, error: res.error };
+              }}
+              onListArchivedTrips={async () => {
+                if (!isAdmin || !adminPin) {
+                  return { ok: false, error: 'Cần mở khóa quyền Admin.' };
+                }
+                return listArchivedTrips(adminPin);
+              }}
+              onOpenArchiveByCode={async (tripCode: string) => {
+                if (!isAdmin || !adminPin) {
+                  return { ok: false, error: 'Cần mở khóa quyền Admin để tra cứu chuyến cũ.' };
+                }
+                const res = await fetchArchivedTripByCode(adminPin, tripCode);
+                if (res.ok && res.snapshot) {
+                  setViewingArchive(res.snapshot);
+                  setActiveTab('overview');
+                  showToast(
+                    `Đang xem chuyến lưu trữ [${res.snapshot.summary.archiveCode}] (Chỉ xem)`
+                  );
+                }
+                return { ok: res.ok, error: res.error };
+              }}
+              onExitArchive={() => {
+                setViewingArchive(null);
+                showToast(`Đã quay lại chuyến hiện tại: ${appState.config.tripName}`);
               }}
               onChangeAdminPin={async (oldPin, newPin) => {
                 const res = await changeAdminPin(
@@ -1383,15 +1499,19 @@ export default function App() {
         activeTab={activeTab}
         onSelectTab={setActiveTab}
         onOpenAddModal={() => {
-          if (appState.config.tripStatus === 'completed') {
-            showToast('Chuyến đi đã khóa sổ — Chế độ chỉ xem.');
+          if (isReadOnlyTrip) {
+            showToast(
+              viewingArchive
+                ? 'Đang xem chuyến lưu trữ — Bấm "Quay lại chuyến hiện tại" để ghi chi tiêu.'
+                : 'Chuyến đi đã khóa sổ — Chế độ chỉ xem.'
+            );
             return;
           }
           setEditingRecord(null);
           setIsExpenseModalOpen(true);
         }}
         pendingSyncCount={syncQueue.length}
-        isTripCompleted={appState.config.tripStatus === 'completed'}
+        isTripCompleted={isReadOnlyTrip}
       />
     </div>
   );

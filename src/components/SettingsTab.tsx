@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Archive,
   Check,
@@ -13,6 +13,7 @@ import {
   EyeOff,
   FileDown,
   FolderKanban,
+  FolderPlus,
   KeyRound,
   Link2,
   Lock,
@@ -21,6 +22,7 @@ import {
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   Trash2,
   Unlock,
   Users,
@@ -32,8 +34,11 @@ import {
   BANK_LIST,
   sortCategoriesTailOrder,
 } from '../config';
-import { buildShareableTripUrl } from '../services/syncService';
+import { buildShareableTripUrl, normalizeTripCode } from '../services/syncService';
 import type {
+  ArchiveAndNewTripPayload,
+  ArchivedTripSnapshot,
+  ArchivedTripSummary,
   Category,
   ExpenseRecord,
   HistoryEntry,
@@ -41,7 +46,8 @@ import type {
   SplitMode,
   TripConfig,
 } from '../types';
-import { copyToClipboard, formatVND, generateUUID } from '../utils/format';
+import { copyToClipboard, formatDateRangeVN, formatVND, generateUUID, getNowGMT7 } from '../utils/format';
+import { getMemberGroupSize, parseMemberGroupSize } from '../utils/math';
 import { buildExpenseReportData } from '../utils/pdfReportData';
 import { MemberAvatar } from './MemberAvatar';
 import { CATEGORY_ICON_MAP } from './OverviewTab';
@@ -52,6 +58,7 @@ interface SettingsTabProps {
   categories: Category[];
   expenses: ExpenseRecord[];
   history: HistoryEntry[];
+  viewingArchive?: ArchivedTripSnapshot | null;
   isAdmin: boolean;
   adminPin: string;
   gasUrl: string;
@@ -62,6 +69,16 @@ interface SettingsTabProps {
   onUnlockAdmin: (pin: string) => Promise<{ ok: boolean; error?: string }>;
   onLockAdmin: () => void;
   onChangeAdminPin: (currentPin: string, newPin: string) => Promise<{ ok: boolean; error?: string }>;
+  onArchiveAndStartNewTrip?: (
+    payload: ArchiveAndNewTripPayload
+  ) => Promise<{ ok: boolean; archiveSummary?: ArchivedTripSummary; error?: string }>;
+  onListArchivedTrips?: () => Promise<{
+    ok: boolean;
+    archives?: ArchivedTripSummary[];
+    error?: string;
+  }>;
+  onOpenArchiveByCode?: (tripCode: string) => Promise<{ ok: boolean; error?: string }>;
+  onExitArchive?: () => void;
   onUpdateMembers: (nextMembers: Member[]) => Promise<void>;
   onUpdateCategories: (nextCategories: Category[]) => Promise<void>;
   onUpdateConfig: (nextConfig: TripConfig) => Promise<void>;
@@ -82,6 +99,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   categories,
   expenses,
   history,
+  viewingArchive = null,
   isAdmin,
   gasUrl,
   simulateOffline,
@@ -91,6 +109,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   onUnlockAdmin,
   onLockAdmin,
   onChangeAdminPin,
+  onArchiveAndStartNewTrip,
+  onListArchivedTrips,
+  onOpenArchiveByCode,
+  onExitArchive,
   onUpdateMembers,
   onUpdateCategories,
   onUpdateConfig,
@@ -120,6 +142,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   const [cfgForm, setCfgForm] = useState<TripConfig>(config);
   const [confirmLockWithPending, setConfirmLockWithPending] = useState<boolean>(false);
 
+  // Quản lý Lưu trữ chuyến cũ & Tạo chuyến đi mới (Admin)
+  const [showNewTripForm, setShowNewTripForm] = useState<boolean>(false);
+  const [archiveCodeInput, setArchiveCodeInput] = useState<string>('');
+  const [newTripName, setNewTripName] = useState<string>('');
+  const [newTripId, setNewTripId] = useState<string>('');
+  const [newTripIdTouched, setNewTripIdTouched] = useState<boolean>(false);
+  const [newLocation, setNewLocation] = useState<string>('');
+  const [newStartDate, setNewStartDate] = useState<string>('');
+  const [newEndDate, setNewEndDate] = useState<string>('');
+  const [keepMembers, setKeepMembers] = useState<boolean>(true);
+  const [keepCategories, setKeepCategories] = useState<boolean>(true);
+  const [creatingNewTrip, setCreatingNewTrip] = useState<boolean>(false);
+  const [newTripError, setNewTripError] = useState<string>('');
+
+  // Tra cứu chuyến đi cũ theo mã trip (Admin)
+  const [archiveSearchCode, setArchiveSearchCode] = useState<string>('');
+  const [archivedTrips, setArchivedTrips] = useState<ArchivedTripSummary[]>([]);
+  const [loadingArchives, setLoadingArchives] = useState<boolean>(false);
+  const [openingArchiveCode, setOpeningArchiveCode] = useState<string | null>(null);
+  const [archiveLookupError, setArchiveLookupError] = useState<string>('');
+
   const [gasUrlInput, setGasUrlInput] = useState<string>(gasUrl);
   const [testingSheet, setTestingSheet] = useState<boolean>(false);
   const [copiedCode, setCopiedCode] = useState<boolean>(false);
@@ -132,15 +175,25 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
   const [exportingPdf, setExportingPdf] = useState<boolean>(false);
   const [pdfExportError, setPdfExportError] = useState<string>('');
 
+  const reportSourceConfig = viewingArchive ? viewingArchive.config : config;
+  const reportSourceMembers = viewingArchive ? viewingArchive.members : members;
+  const reportSourceCategories = viewingArchive ? viewingArchive.categories : categories;
+  const reportSourceExpenses = viewingArchive ? viewingArchive.expenses : expenses;
+
   const reportPreview = useMemo(
     () =>
       buildExpenseReportData({
-        config,
-        members,
-        categories,
-        expenses,
+        config: reportSourceConfig,
+        members: reportSourceMembers,
+        categories: reportSourceCategories,
+        expenses: reportSourceExpenses,
       }),
-    [config, members, categories, expenses]
+    [reportSourceConfig, reportSourceMembers, reportSourceCategories, reportSourceExpenses]
+  );
+
+  const activeExpenseCount = useMemo(
+    () => expenses.filter((e) => !e.deleted && e.type !== 'transfer').length,
+    [expenses]
   );
 
   const handleExportPdfReport = async () => {
@@ -177,6 +230,28 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
     setCfgForm(config);
   }, [config]);
 
+  const loadArchivesList = useCallback(async () => {
+    if (!isAdmin || !onListArchivedTrips) return;
+    setLoadingArchives(true);
+    setArchiveLookupError('');
+    try {
+      const res = await onListArchivedTrips();
+      if (res.ok) {
+        setArchivedTrips(res.archives || []);
+      } else if (res.error) {
+        setArchiveLookupError(res.error);
+      }
+    } finally {
+      setLoadingArchives(false);
+    }
+  }, [isAdmin, onListArchivedTrips]);
+
+  useEffect(() => {
+    if (isAdmin && activeSection === 'trip') {
+      void loadArchivesList();
+    }
+  }, [isAdmin, activeSection, loadArchivesList]);
+
   useEffect(() => {
     if (!isAdmin) {
       setEditingMemberId(null);
@@ -184,8 +259,85 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
       setShowChangePin(false);
       setConfirmResetDemo(false);
       setShowRawCodeGs(false);
+      setShowNewTripForm(false);
+      setArchivedTrips([]);
+      setArchiveLookupError('');
+      setNewTripError('');
     }
   }, [isAdmin]);
+
+  const openNewTripForm = () => {
+    if (!isAdmin) return;
+    const today = getNowGMT7(false).slice(0, 10);
+    setArchiveCodeInput(normalizeTripCode(config.tripId || config.tripName || 'TRIP'));
+    setNewTripName('');
+    setNewTripId('');
+    setNewTripIdTouched(false);
+    setNewLocation('');
+    setNewStartDate(today);
+    setNewEndDate(today);
+    setKeepMembers(true);
+    setKeepCategories(true);
+    setNewTripError('');
+    setShowNewTripForm(true);
+  };
+
+  const handleConfirmArchiveAndNewTrip = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !onArchiveAndStartNewTrip) return;
+    if (pendingSyncCount > 0) {
+      setNewTripError(
+        `Còn ${pendingSyncCount} khoản chi chưa đồng bộ. Vui lòng đồng bộ hết trước khi lưu trữ.`
+      );
+      return;
+    }
+    if (!newTripName.trim()) {
+      setNewTripError('Vui lòng nhập tên chuyến đi mới.');
+      return;
+    }
+
+    setCreatingNewTrip(true);
+    setNewTripError('');
+    try {
+      const res = await onArchiveAndStartNewTrip({
+        archiveCode: normalizeTripCode(archiveCodeInput || config.tripId || config.tripName),
+        newTripId: normalizeTripCode(newTripId || newTripName),
+        newTripName: newTripName.trim(),
+        newLocation: newLocation.trim(),
+        newStartDate,
+        newEndDate,
+        keepMembers,
+        keepCategories,
+      });
+      if (res.ok) {
+        setShowNewTripForm(false);
+        await loadArchivesList();
+      } else {
+        setNewTripError(res.error || 'Không thể lưu trữ và tạo chuyến đi mới.');
+      }
+    } finally {
+      setCreatingNewTrip(false);
+    }
+  };
+
+  const handleOpenArchiveCode = async (rawCode: string) => {
+    if (!isAdmin || !onOpenArchiveByCode) return;
+    const clean = rawCode.trim();
+    if (!clean) {
+      setArchiveLookupError('Vui lòng nhập mã chuyến đi cần tra cứu.');
+      return;
+    }
+    setOpeningArchiveCode(clean);
+    setArchiveLookupError('');
+    try {
+      const res = await onOpenArchiveByCode(clean);
+      if (!res.ok) {
+        setArchiveLookupError(res.error || `Không tìm thấy chuyến đi với mã "${clean}".`);
+      }
+    } finally {
+      setOpeningArchiveCode(null);
+    }
+  };
 
   const handleVerifyPin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,6 +385,17 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
 
   const handleSaveMember = async () => {
     if (!isAdmin || !memForm || !memForm.name.trim()) return;
+    const cleanName = memForm.name.trim();
+    const detectedGroupSize = parseMemberGroupSize(cleanName);
+    const prevMember = members.find((m) => m.id === memForm.id);
+    const prevGroupSize = prevMember ? getMemberGroupSize(prevMember) : 1;
+    const nextDefaultWeight =
+      detectedGroupSize > 1
+        ? detectedGroupSize
+        : prevGroupSize > 1
+        ? 1
+        : Math.max(1, Math.round(memForm.defaultWeight || 1));
+
     const cleanAccountNo = String(memForm.accountNo || '')
       .replace(/\s+/g, '')
       .replace(/^'+/, '');
@@ -241,7 +404,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
         m.id === memForm.id
           ? {
               ...memForm,
-              name: memForm.name.trim(),
+              name: cleanName,
+              defaultWeight: nextDefaultWeight,
               bankName: (memForm.bankName || '').trim(),
               accountNo: cleanAccountNo,
               accountHolder: (memForm.accountHolder || '').trim().toUpperCase(),
@@ -252,19 +416,20 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
     await onUpdateMembers(next);
     setEditingMemberId(null);
     setMemForm(null);
-    onShowToast(`Đã lưu ${memForm.name}`);
+    onShowToast(`Đã lưu ${cleanName}`);
   };
 
   const handleAddMember = async () => {
     if (!isAdmin) return;
     const cleanName = newMemberName.trim();
     if (!cleanName) return;
+    const groupSize = parseMemberGroupSize(cleanName);
     const nextColor = AVATAR_COLORS[members.length % AVATAR_COLORS.length];
     const newMem: Member = {
       id: `mem_${generateUUID().slice(0, 8)}`,
       name: cleanName,
       avatarColor: nextColor,
-      defaultWeight: 1,
+      defaultWeight: groupSize,
       bankName: '',
       accountNo: '',
       accountHolder: '',
@@ -275,7 +440,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
     );
     await onUpdateMembers(next);
     setNewMemberName('');
-    onShowToast(`+${cleanName}`);
+    onShowToast(
+      groupSize > 1 ? `+${cleanName} (nhóm ${groupSize} suất)` : `+${cleanName}`
+    );
   };
 
   const handleDeleteMember = async (m: Member) => {
@@ -463,38 +630,52 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
       {activeSection === 'members' && (
         <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
           {/* Thêm thành viên (Cần mở PIN ở mục Hệ thống) */}
-          <div
-            className={`flex items-center gap-2 ${
-              !isAdmin ? 'opacity-40 pointer-events-none select-none' : ''
-            }`}
-          >
-            <input
-              type="text"
-              name="newMemberName"
-              maxLength={50}
-              autoComplete="off"
-              aria-label="Tên thành viên mới"
-              disabled={!isAdmin}
-              value={newMemberName}
-              onChange={(e) => setNewMemberName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  handleAddMember();
-                }
-              }}
-              placeholder="Thêm thành viên…"
-              className="flex-1 min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-medium"
-            />
-            <button
-              type="button"
-              disabled={!isAdmin}
-              onClick={handleAddMember}
-              className="min-h-[40px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+          <div className="space-y-1.5">
+            <div
+              className={`flex items-center gap-2 ${
+                !isAdmin ? 'opacity-40 pointer-events-none select-none' : ''
+              }`}
             >
-              <Plus aria-hidden="true" className="w-3.5 h-3.5" />
-              <span>Thêm</span>
-            </button>
+              <input
+                type="text"
+                name="newMemberName"
+                maxLength={50}
+                autoComplete="off"
+                aria-label="Tên thành viên mới"
+                disabled={!isAdmin}
+                value={newMemberName}
+                onChange={(e) => setNewMemberName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddMember();
+                  }
+                }}
+                placeholder='Thêm tên hoặc gộp nhóm (VD: "10 thành viên", "5 mem")…'
+                className="flex-1 min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-medium"
+              />
+              <button
+                type="button"
+                disabled={!isAdmin}
+                onClick={handleAddMember}
+                className="min-h-[40px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1 shrink-0 transition-colors"
+              >
+                <Plus aria-hidden="true" className="w-3.5 h-3.5" />
+                <span>Thêm</span>
+              </button>
+            </div>
+            {parseMemberGroupSize(newMemberName) > 1 ? (
+              <div className="px-1 text-[11px] font-semibold text-brand">
+                Nhận diện nhóm gộp: tự động chia{' '}
+                <strong>{parseMemberGroupSize(newMemberName)} suất/phần</strong> và chia đều khi
+                quyết toán.
+              </div>
+            ) : (
+              <div className="px-1 text-[11px] text-slate-500">
+                Mẹo gộp nhóm: đặt tên bắt đầu bằng số (VD: &ldquo;10 thành viên&rdquo;, &ldquo;5
+                mem&rdquo;) để tự động gán số suất &amp; chia đều khi chốt tiền.
+              </div>
+            )}
           </div>
 
           {/* Danh sách thành viên */}
@@ -504,14 +685,22 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
               .map((m) => {
                 const isEditingThis = isAdmin && editingMemberId === m.id && memForm;
                 const usedInExpenses = isMemberUsed(m.id);
+                const groupSize = getMemberGroupSize(m);
                 return (
                   <div key={m.id} className="p-2.5 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
                         <MemberAvatar member={m} size="md" />
                         <div className="min-w-0">
-                          <div className="text-xs font-bold text-slate-900 truncate">
-                            {m.name}
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs font-bold text-slate-900 truncate">
+                              {m.name}
+                            </span>
+                            {groupSize > 1 && (
+                              <span className="px-1.5 py-0.5 rounded-md bg-brand-soft text-brand text-[10px] font-bold shrink-0">
+                                Nhóm · {groupSize} suất
+                              </span>
+                            )}
                           </div>
                           {m.accountNo ? (
                             <div className="text-[11px] text-slate-600 font-mono truncate">
@@ -519,7 +708,11 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                               {m.bankName ? ` (${m.bankName})` : ''}
                             </div>
                           ) : (
-                            <div className="text-[11px] text-slate-400">Chưa có STK</div>
+                            <div className="text-[11px] text-slate-400">
+                              {groupSize > 1
+                                ? `Tự động tính ${groupSize} phần · Quyết toán chia đều ÷${groupSize}`
+                                : 'Chưa có STK'}
+                            </div>
                           )}
                         </div>
                       </div>
@@ -665,13 +858,32 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
         </section>
       )}
 
-      {/* TAB 2: CHUYẾN ĐI & DANH MỤC (Mờ khi chưa mở Admin) */}
+      {/* TAB 2: CHUYẾN ĐI & DANH MỤC (Yêu cầu mở quyền Admin) */}
       {activeSection === 'trip' && (
-        <div
-          className={`space-y-4 ${
-            !isAdmin ? 'opacity-45 pointer-events-none select-none' : ''
-          }`}
-        >
+        <div className="space-y-4">
+          {!isAdmin && (
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 flex flex-wrap items-center justify-between gap-2.5 text-xs text-amber-950">
+              <div className="flex items-center gap-2 min-w-0">
+                <Lock aria-hidden="true" className="w-4 h-4 text-amber-700 shrink-0" />
+                <span className="font-medium leading-snug">
+                  Cần mở quyền <strong>Admin</strong> để khóa sổ, lưu trữ, tạo chuyến đi mới hoặc tra cứu chuyến cũ.
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection('system')}
+                className="min-h-[34px] px-3 py-1 rounded-xl bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold shrink-0 transition-colors cursor-pointer"
+              >
+                Mở khóa Admin
+              </button>
+            </div>
+          )}
+
+          <div
+            className={`space-y-4 ${
+              !isAdmin ? 'opacity-45 pointer-events-none select-none' : ''
+            }`}
+          >
           {/* Thông tin chuyến đi */}
           <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
@@ -689,6 +901,19 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
               />
               <input
                 type="text"
+                name="tripId"
+                maxLength={32}
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Mã chuyến đi"
+                disabled={!isAdmin}
+                value={cfgForm.tripId}
+                onChange={(e) => setCfgForm({ ...cfgForm, tripId: e.target.value.toUpperCase() })}
+                placeholder="Mã trip (VD: HN-2026)…"
+                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-mono font-bold text-slate-800"
+              />
+              <input
+                type="text"
                 name="location"
                 maxLength={80}
                 autoComplete="off"
@@ -697,7 +922,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
                 value={cfgForm.location}
                 onChange={(e) => setCfgForm({ ...cfgForm, location: e.target.value })}
                 placeholder="Địa điểm…"
-                className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
+                className="w-full sm:col-span-2 min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
               />
               <input
                 type="date"
@@ -832,6 +1057,345 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
             )}
           </section>
 
+          {/* Lưu trữ chuyến hiện tại & Tạo chuyến đi mới (Single Google Sheet - Admin) */}
+          <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <FolderPlus aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="text-xs font-bold text-slate-900 truncate">
+                    Lưu trữ &amp; Tạo chuyến đi mới
+                  </h3>
+                  <p className="text-[11px] text-slate-500 truncate">
+                    Chuyến hiện tại: <strong className="font-mono text-slate-700">{config.tripId || 'TRIP'}</strong> · {activeExpenseCount} khoản chi
+                  </p>
+                </div>
+              </div>
+
+              {!showNewTripForm && (
+                <button
+                  type="button"
+                  disabled={!isAdmin}
+                  onClick={openNewTripForm}
+                  className="min-h-[36px] px-3.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
+                >
+                  <Archive aria-hidden="true" className="w-3.5 h-3.5" />
+                  <span>Lưu trữ &amp; Tạo mới</span>
+                </button>
+              )}
+            </div>
+
+            {!showNewTripForm && (
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                Sao lưu 100% khoản chi chuyến cũ sang tab <span className="font-mono font-semibold text-slate-700">Archive_*</span> + mục lục <span className="font-mono font-semibold text-slate-700">Archives</span> trên cùng Google Sheet, rồi mở chuyến đi mới sạch sẽ (giữ lại được thành viên &amp; STK cũ).
+              </p>
+            )}
+
+            {showNewTripForm && (
+              <form
+                onSubmit={handleConfirmArchiveAndNewTrip}
+                className="pt-3 border-t border-slate-100 space-y-3"
+              >
+                {pendingSyncCount > 0 && (
+                  <div
+                    role="alert"
+                    className="p-3 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-2"
+                  >
+                    <div className="font-bold">
+                      Còn {pendingSyncCount} khoản chi chưa đồng bộ lên Google Sheet.
+                    </div>
+                    <p className="text-[11px] text-amber-900">
+                      Hãy đồng bộ hết lên Google Sheet trước khi lưu trữ để đảm bảo không bỏ sót khoản chi nào.
+                    </p>
+                    {onSyncNow && (
+                      <button
+                        type="button"
+                        disabled={isSyncing}
+                        onClick={() => onSyncNow()}
+                        className="min-h-[32px] px-3 rounded-lg bg-amber-800 hover:bg-amber-900 text-white text-xs font-bold cursor-pointer"
+                      >
+                        {isSyncing ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}
+                      </button>
+                    )}
+                  </div>
+                )}
+
+                <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                  <label className="block text-[11px] font-bold text-slate-700">
+                    Mã lưu trữ chuyến cũ (dùng để tra cứu lại sau này)
+                  </label>
+                  <input
+                    type="text"
+                    name="archiveCode"
+                    maxLength={32}
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label="Mã lưu trữ chuyến cũ"
+                    value={archiveCodeInput}
+                    onChange={(e) => setArchiveCodeInput(e.target.value.toUpperCase())}
+                    placeholder="VD: HN-2026"
+                    className="w-full min-h-[38px] px-3 rounded-xl border border-slate-200 bg-white font-mono text-xs font-bold text-brand"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <input
+                    type="text"
+                    name="newTripName"
+                    maxLength={80}
+                    autoComplete="off"
+                    required
+                    aria-label="Tên chuyến đi mới"
+                    value={newTripName}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setNewTripName(val);
+                      if (!newTripIdTouched) {
+                        setNewTripId(val.trim() ? normalizeTripCode(val) : '');
+                      }
+                    }}
+                    placeholder="Tên chuyến đi mới (VD: Đà Lạt 2026)…"
+                    className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-semibold"
+                  />
+                  <input
+                    type="text"
+                    name="newTripId"
+                    maxLength={32}
+                    autoComplete="off"
+                    spellCheck={false}
+                    aria-label="Mã chuyến đi mới"
+                    value={newTripId}
+                    onChange={(e) => {
+                      setNewTripIdTouched(true);
+                      setNewTripId(e.target.value.toUpperCase());
+                    }}
+                    placeholder="Mã chuyến mới (VD: DA-LAT-2026)…"
+                    className="w-full min-h-[40px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white font-mono text-xs font-bold"
+                  />
+                  <input
+                    type="text"
+                    name="newLocation"
+                    maxLength={80}
+                    autoComplete="off"
+                    aria-label="Địa điểm chuyến đi mới"
+                    value={newLocation}
+                    onChange={(e) => setNewLocation(e.target.value)}
+                    placeholder="Địa điểm mới (tùy chọn)…"
+                    className="w-full sm:col-span-2 min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs"
+                  />
+                  <input
+                    type="date"
+                    name="newStartDate"
+                    aria-label="Ngày bắt đầu chuyến mới"
+                    value={newStartDate}
+                    onChange={(e) => setNewStartDate(e.target.value)}
+                    className="w-full min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-mono"
+                  />
+                  <input
+                    type="date"
+                    name="newEndDate"
+                    aria-label="Ngày kết thúc chuyến mới"
+                    value={newEndDate}
+                    onChange={(e) => setNewEndDate(e.target.value)}
+                    className="w-full min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs font-mono"
+                  />
+                </div>
+
+                <div className="space-y-1.5 pt-0.5">
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={keepMembers}
+                      onChange={(e) => setKeepMembers(e.target.checked)}
+                      className="w-4 h-4 rounded accent-brand"
+                    />
+                    <span>Giữ nguyên danh sách thành viên &amp; STK hiện tại ({members.length} mục)</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={keepCategories}
+                      onChange={(e) => setKeepCategories(e.target.checked)}
+                      className="w-4 h-4 rounded accent-brand"
+                    />
+                    <span>Giữ nguyên danh mục chi tiêu hiện tại</span>
+                  </label>
+                </div>
+
+                {newTripError && (
+                  <div role="alert" className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-700 font-medium">
+                    {newTripError}
+                  </div>
+                )}
+
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    disabled={creatingNewTrip}
+                    onClick={() => {
+                      setShowNewTripForm(false);
+                      setNewTripError('');
+                    }}
+                    className="min-h-[36px] px-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-600 cursor-pointer"
+                  >
+                    Hủy
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={creatingNewTrip || pendingSyncCount > 0 || !newTripName.trim()}
+                    className="min-h-[36px] px-4 rounded-xl bg-brand hover:bg-brand-hover disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <Archive aria-hidden="true" className="w-3.5 h-3.5" />
+                    <span>{creatingNewTrip ? 'Đang lưu trữ…' : 'Xác nhận lưu trữ & tạo mới'}</span>
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+
+          {/* Tra cứu chuyến đi đã lưu trữ theo mã trip (Chỉ Admin) */}
+          <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <Search aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
+                <h3 className="text-xs font-bold text-slate-900 truncate">
+                  Tra cứu chuyến đi đã lưu trữ
+                </h3>
+              </div>
+              <button
+                type="button"
+                disabled={!isAdmin || loadingArchives}
+                onClick={() => void loadArchivesList()}
+                aria-label="Tải lại danh sách chuyến lưu trữ"
+                title="Tải lại danh sách"
+                className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-600 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <RefreshCw
+                  aria-hidden="true"
+                  className={`w-3.5 h-3.5 ${loadingArchives ? 'animate-spin' : ''}`}
+                />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleOpenArchiveCode(archiveSearchCode);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                name="archiveSearchCode"
+                maxLength={40}
+                autoComplete="off"
+                spellCheck={false}
+                aria-label="Nhập mã chuyến đi cũ"
+                disabled={!isAdmin}
+                value={archiveSearchCode}
+                onChange={(e) => {
+                  setArchiveSearchCode(e.target.value);
+                  setArchiveLookupError('');
+                }}
+                placeholder="Nhập mã chuyến đi (VD: HN-2026)…"
+                className="flex-1 min-w-0 min-h-[38px] px-3 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white font-mono text-xs font-semibold"
+              />
+              <button
+                type="submit"
+                disabled={!isAdmin || !archiveSearchCode.trim() || Boolean(openingArchiveCode)}
+                className="min-h-[38px] px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white text-xs font-bold shrink-0 transition-colors cursor-pointer"
+              >
+                {openingArchiveCode === archiveSearchCode.trim() ? 'Đang mở…' : 'Xem chuyến cũ'}
+              </button>
+            </form>
+
+            {archiveLookupError && (
+              <div role="alert" className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-medium leading-relaxed">
+                {archiveLookupError}
+              </div>
+            )}
+
+            {archivedTrips.length > 0 ? (
+              <div className="divide-y divide-slate-100 border border-slate-200/80 rounded-xl overflow-hidden">
+                {archivedTrips.map((item) => {
+                  const isViewingThis = viewingArchive?.summary.archiveCode === item.archiveCode;
+                  const dateLabel =
+                    item.startDate && item.endDate
+                      ? formatDateRangeVN(item.startDate, item.endDate)
+                      : item.archivedAt.slice(0, 10);
+                  return (
+                    <div
+                      key={`${item.archiveCode}_${item.expenseSheetName}`}
+                      className={`p-2.5 flex items-center justify-between gap-2 text-xs ${
+                        isViewingThis ? 'bg-brand-soft/60' : 'bg-white'
+                      }`}
+                    >
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-1.5 py-0.5 rounded-md bg-slate-100 border border-slate-200 font-mono text-[10.5px] font-bold text-brand">
+                            {item.archiveCode}
+                          </span>
+                          <span className="font-bold text-slate-900 truncate">
+                            {item.tripName}
+                          </span>
+                        </div>
+                        <div className="text-[11px] text-slate-500 flex flex-wrap items-center gap-x-2">
+                          {dateLabel && <span>{dateLabel}</span>}
+                          <span>· {item.expenseCount} khoản</span>
+                          {item.totalExpense > 0 && (
+                            <span className="font-mono font-semibold text-slate-700">
+                              · {formatVND(item.totalExpense)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const ok = await copyToClipboard(item.archiveCode);
+                            if (ok) onShowToast(`Đã copy mã trip: ${item.archiveCode}`);
+                          }}
+                          aria-label={`Copy mã ${item.archiveCode}`}
+                          title="Copy mã trip"
+                          className="w-8 h-8 rounded-lg border border-slate-200 hover:bg-slate-50 text-slate-500 flex items-center justify-center transition-colors cursor-pointer"
+                        >
+                          <Copy aria-hidden="true" className="w-3.5 h-3.5" />
+                        </button>
+
+                        {isViewingThis && onExitArchive ? (
+                          <button
+                            type="button"
+                            onClick={onExitArchive}
+                            className="min-h-[34px] px-2.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
+                          >
+                            Thoát xem
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={Boolean(openingArchiveCode)}
+                            onClick={() => void handleOpenArchiveCode(item.archiveCode)}
+                            className="min-h-[34px] px-3 rounded-lg bg-brand-soft hover:bg-brand-border/50 text-brand text-xs font-bold transition-colors cursor-pointer"
+                          >
+                            {openingArchiveCode === item.archiveCode ? 'Mở…' : 'Xem'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-[11px] text-slate-400 px-1">
+                {loadingArchives
+                  ? 'Đang tải danh sách chuyến đi đã lưu trữ…'
+                  : 'Chưa có chuyến đi nào được lưu trữ.'}
+              </div>
+            )}
+          </section>
+
           {/* Danh mục */}
           <section className="p-4 rounded-2xl bg-white border border-slate-200/90 shadow-2xs space-y-3">
             <div className="flex items-center gap-1.5">
@@ -930,6 +1494,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
               })}
             </div>
           </section>
+          </div>
         </div>
       )}
 
@@ -1269,7 +1834,9 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
           <div className="flex items-center gap-2 min-w-0">
             <FileDown aria-hidden="true" className="w-4 h-4 text-brand shrink-0" />
             <h3 className="text-xs font-bold text-slate-900 truncate">
-              Xuất báo cáo chi tiêu
+              {viewingArchive
+                ? `Xuất báo cáo PDF (Lưu trữ: ${viewingArchive.summary.archiveCode})`
+                : 'Xuất báo cáo chi tiêu'}
             </h3>
           </div>
           <button
@@ -1309,7 +1876,7 @@ export const SettingsTab: React.FC<SettingsTabProps> = React.memo(({
 
         <div className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-100 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-600">
           <span>
-            Khoản chi: <strong className="font-mono text-slate-900">{reportPreview.overview.expenseCount}</strong> khoản ({members.length} người)
+            Khoản chi: <strong className="font-mono text-slate-900">{reportPreview.overview.expenseCount}</strong> khoản ({reportPreview.overview.memberCount} người)
           </span>
           <span className="font-mono">
             Tổng chi tiêu: <strong className="text-slate-900">{formatVND(reportPreview.overview.totalExpenseAmount)}</strong>

@@ -9,6 +9,9 @@ import {
 import { resolveMemberAvatarPalette } from '../components/MemberAvatar';
 import type {
   AppStateData,
+  ArchiveAndNewTripPayload,
+  ArchivedTripSnapshot,
+  ArchivedTripSummary,
   Category,
   ExpenseRecord,
   HistoryEntry,
@@ -16,7 +19,8 @@ import type {
   SyncQueueItem,
   TripConfig,
 } from '../types';
-import { generateUUID, getNowGMT7 } from '../utils/format';
+import { generateUUID, getNowGMT7, normalizeSearchText } from '../utils/format';
+import { getTotalHeadcount, parseMemberGroupSize } from '../utils/math';
 
 const STORAGE_KEYS = {
   STATE: 'hn_trip_split_state_v2',
@@ -25,6 +29,7 @@ const STORAGE_KEYS = {
   GAS_URL: 'hn_trip_gas_url_v3',
   DEMO_PIN: 'hn_trip_demo_admin_pin_v2',
   SIMULATE_OFFLINE: 'hn_trip_simulate_offline_v2',
+  ARCHIVES: 'hn_trip_archives_v1',
 };
 
 const VALID_GAS_EXEC_REGEX = /^https:\/\/script\.google\.com\/macros\/s\/[a-zA-Z0-9_-]+\/exec$/;
@@ -107,13 +112,17 @@ export function setSimulateOffline(val: boolean): void {
 }
 
 export function normalizeMembersList(rawMembers: Member[]): Member[] {
-  return rawMembers.map((m, idx) => ({
-    ...m,
-    accountNo: String(m.accountNo ?? '')
-      .replace(/\s+/g, '')
-      .replace(/^'+/, ''),
-    avatarColor: resolveMemberAvatarPalette(m, idx).hex,
-  }));
+  return rawMembers.map((m, idx) => {
+    const groupSize = parseMemberGroupSize(m.name);
+    return {
+      ...m,
+      defaultWeight: groupSize > 1 ? groupSize : Math.max(1, Math.round(m.defaultWeight || 1)),
+      accountNo: String(m.accountNo ?? '')
+        .replace(/\s+/g, '')
+        .replace(/^'+/, ''),
+      avatarColor: resolveMemberAvatarPalette(m, idx).hex,
+    };
+  });
 }
 
 export function loadAppState(): AppStateData {
@@ -1386,3 +1395,483 @@ export async function processSyncQueue(
 
   return { syncedCount, conflictCount, errorCount, tripLocked };
 }
+
+/**
+ * Chuẩn hóa mã chuyến đi thành dạng ASCII gọn gàng (A-Z, 0-9, -, _), tối đa 32 ký tự.
+ * Ví dụ: "Đà Lạt 2026" -> "DA-LAT-2026", "hn_2026" -> "HN_2026".
+ */
+export function normalizeTripCode(raw: string): string {
+  const ascii = normalizeSearchText(raw)
+    .toUpperCase()
+    .replace(/[^A-Z0-9_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return ascii || 'TRIP';
+}
+
+function loadLocalArchives(): ArchivedTripSnapshot[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.ARCHIVES);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {
+    // Ignore storage read errors
+  }
+  return [];
+}
+
+function saveLocalArchives(list: ArchivedTripSnapshot[]): void {
+  try {
+    localStorage.setItem(STORAGE_KEYS.ARCHIVES, JSON.stringify(list));
+  } catch {
+    // Ignore storage quota errors
+  }
+}
+
+function ensureUniqueLocalArchiveCode(baseCode: string, existing: ArchivedTripSnapshot[]): string {
+  const used = new Set(
+    existing.map((item) => String(item.summary?.archiveCode || '').trim().toUpperCase())
+  );
+  const base = normalizeTripCode(baseCode);
+  if (!used.has(base)) return base;
+  let idx = 2;
+  while (used.has(`${base}-${idx}`) && idx < 999) {
+    idx += 1;
+  }
+  return `${base}-${idx}`;
+}
+
+function parseRemoteTripConfig(rawCfg: Record<string, unknown> | undefined): TripConfig {
+  const cfg = rawCfg || {};
+  const parsed: Partial<TripConfig> = {};
+  if (cfg.tripId) parsed.tripId = String(cfg.tripId);
+  if (cfg.tripName) parsed.tripName = String(cfg.tripName);
+  if (cfg.location !== undefined) parsed.location = String(cfg.location || '');
+  if (cfg.startDate) parsed.startDate = String(cfg.startDate).slice(0, 10);
+  if (cfg.endDate) parsed.endDate = String(cfg.endDate).slice(0, 10);
+  if (cfg.tripStatus === 'completed' || cfg.tripStatus === 'active') {
+    parsed.tripStatus = cfg.tripStatus;
+  }
+  if (cfg.defaultSplitMode === 'equal' || cfg.defaultSplitMode === 'shares' || cfg.defaultSplitMode === 'exact') {
+    parsed.defaultSplitMode = cfg.defaultSplitMode;
+  }
+  if (cfg.enabledSplitModes) {
+    try {
+      parsed.enabledSplitModes =
+        typeof cfg.enabledSplitModes === 'string'
+          ? JSON.parse(cfg.enabledSplitModes)
+          : (cfg.enabledSplitModes as TripConfig['enabledSplitModes']);
+    } catch {
+      // Ignore
+    }
+  }
+  if (cfg.suggestMultipliers) {
+    try {
+      parsed.suggestMultipliers =
+        typeof cfg.suggestMultipliers === 'string'
+          ? JSON.parse(cfg.suggestMultipliers)
+          : (cfg.suggestMultipliers as number[]);
+    } catch {
+      // Ignore
+    }
+  }
+  if (cfg.maxSuggestAmount) {
+    parsed.maxSuggestAmount = Number(cfg.maxSuggestAmount);
+  }
+  if (cfg.accentColor) {
+    parsed.accentColor = String(cfg.accentColor);
+  }
+  return { ...DEFAULT_TRIP_CONFIG, ...parsed };
+}
+
+function normalizeRemoteExpenses(rawExpenses: unknown): ExpenseRecord[] {
+  if (!Array.isArray(rawExpenses)) return [];
+  return rawExpenses.map((e: ExpenseRecord) => {
+    const cleanSplits: Record<string, number> = {};
+    if (e.splits && typeof e.splits === 'object') {
+      for (const [k, v] of Object.entries(e.splits)) {
+        const num = Math.round(Number(v) || 0);
+        if (num > 0) cleanSplits[k] = num;
+      }
+    }
+    return {
+      ...e,
+      rev: Math.max(1, Math.round(Number(e.rev) || 1)),
+      amount: Math.max(0, Math.round(Number(e.amount) || 0)),
+      splits: cleanSplits,
+      deleted: Boolean(e.deleted),
+      syncStatus: 'synced' as const,
+    };
+  });
+}
+
+function mapGasArchiveActionError(err: unknown, fallback: string): string {
+  const msg = String(err || '');
+  if (msg.includes('UNKNOWN_ACTION')) {
+    return 'Google Apps Script (Code.gs) trên Sheet là bản cũ chưa hỗ trợ tính năng Lưu trữ/Tra cứu. Vào Cài đặt → Hệ thống → Copy Code.gs mới và Deploy lại trên Google Sheet.';
+  }
+  return msg || fallback;
+}
+
+/**
+ * Lưu trữ chuyến đi hiện tại (sang tab Archive_* + mục lục Archives trên Google Sheet)
+ * và khởi tạo chuyến đi mới ở trạng thái đang mở (active).
+ * Bắt buộc đã mở quyền Admin (adminPin hợp lệ) và không còn khoản chi chờ đồng bộ.
+ */
+export async function archiveAndStartNewTrip(
+  adminPin: string,
+  actor: string,
+  currentState: AppStateData,
+  payload: ArchiveAndNewTripPayload
+): Promise<{
+  ok: boolean;
+  archiveSummary?: ArchivedTripSummary;
+  nextState?: AppStateData;
+  error?: string;
+}> {
+  const cleanPin = adminPin.trim();
+  if (!cleanPin) {
+    return { ok: false, error: 'Cần mở khóa quyền Admin trước khi lưu trữ và tạo chuyến đi mới.' };
+  }
+
+  const pendingQueue = loadSyncQueue();
+  if (pendingQueue.length > 0) {
+    return {
+      ok: false,
+      error: `Còn ${pendingQueue.length} khoản chi chưa đồng bộ lên Google Sheet. Vui lòng đồng bộ hết trước khi lưu trữ chuyến cũ.`,
+    };
+  }
+
+  const cleanNewName = payload.newTripName.trim();
+  if (!cleanNewName) {
+    return { ok: false, error: 'Vui lòng nhập tên chuyến đi mới.' };
+  }
+
+  const normalizedArchiveCode = normalizeTripCode(
+    payload.archiveCode || currentState.config.tripId || currentState.config.tripName
+  );
+  const normalizedNewTripId = normalizeTripCode(payload.newTripId || cleanNewName);
+
+  const initialMembers: Member[] = payload.keepMembers
+    ? currentState.members
+    : normalizeMembersList([
+        {
+          id: `mem_${Date.now().toString(36)}`,
+          name:
+            currentState.members.find((m) => m.id === actor)?.name ||
+            currentState.members[0]?.name ||
+            'Admin',
+          avatarColor: '#000777',
+          defaultWeight: 1,
+          bankName: currentState.members.find((m) => m.id === actor)?.bankName || '',
+          accountNo: currentState.members.find((m) => m.id === actor)?.accountNo || '',
+          accountHolder: currentState.members.find((m) => m.id === actor)?.accountHolder || '',
+          active: true,
+        },
+      ]);
+
+  const nextCategories: Category[] = payload.keepCategories
+    ? currentState.categories
+    : sortCategoriesTailOrder(DEFAULT_CATEGORIES);
+
+  const nextConfig: TripConfig = {
+    ...currentState.config,
+    tripId: normalizedNewTripId,
+    tripName: cleanNewName,
+    location: payload.newLocation.trim(),
+    startDate: payload.newStartDate.trim().slice(0, 10),
+    endDate: payload.newEndDate.trim().slice(0, 10),
+    tripStatus: 'active',
+  };
+
+  const gasUrl = getGasUrl();
+  if (gasUrl) {
+    if (!navigator.onLine || getSimulateOffline()) {
+      return {
+        ok: false,
+        error: 'Cần kết nối Internet để lưu trữ chuyến cũ và tạo chuyến mới trên Google Sheet.',
+      };
+    }
+
+    try {
+      const res = await postToGas(gasUrl, {
+        action: 'archiveAndStartNewTrip',
+        adminPin: cleanPin,
+        actor: actor || 'admin',
+        archiveCode: normalizedArchiveCode,
+        newConfig: nextConfig,
+        keepMembers: payload.keepMembers,
+        keepCategories: payload.keepCategories,
+        initialMembers,
+        defaultCategories: nextCategories,
+      });
+
+      if (!res?.ok) {
+        return {
+          ok: false,
+          error: mapGasArchiveActionError(
+            res?.message || res?.error,
+            'Không thể lưu trữ và tạo chuyến đi mới trên Google Sheet.'
+          ),
+        };
+      }
+
+      const srvState = res.newState || {};
+      const finalConfig = parseRemoteTripConfig(srvState.config || nextConfig);
+      const finalMembers =
+        Array.isArray(srvState.members) && srvState.members.length > 0
+          ? normalizeMembersList(srvState.members)
+          : initialMembers;
+      const finalCategories =
+        Array.isArray(srvState.categories) && srvState.categories.length > 0
+          ? sortCategoriesTailOrder(srvState.categories)
+          : nextCategories;
+
+      const updatedState: AppStateData = {
+        config: { ...finalConfig, tripStatus: 'active' },
+        members: finalMembers,
+        categories: finalCategories,
+        expenses: [],
+        history: [
+          {
+            timestamp: String(res.serverTime || getNowGMT7(true)),
+            actor: actor || 'admin',
+            action: 'ARCHIVE_AND_NEW_TRIP',
+            entityType: 'Archive',
+            entityId: String(res.archiveSummary?.archiveCode || normalizedArchiveCode),
+            rev: 1,
+            beforeJson: '',
+            afterJson: JSON.stringify({ newTripId: finalConfig.tripId, newTripName: finalConfig.tripName }),
+          },
+          ...currentState.history.slice(0, 49),
+        ],
+        lastSyncedAt: String(res.serverTime || getNowGMT7(false)).slice(0, 16),
+      };
+
+      saveAppState(updatedState);
+      saveSyncQueue([]);
+      return {
+        ok: true,
+        archiveSummary: res.archiveSummary as ArchivedTripSummary,
+        nextState: updatedState,
+      };
+    } catch (err: any) {
+      return {
+        ok: false,
+        error: err?.message || 'Lỗi mạng khi lưu trữ chuyến đi trên Google Sheet.',
+      };
+    }
+  }
+
+  // Chế độ Local Demo (không gắn Google Sheet): kiểm tra PIN demo trước khi lưu trữ cục bộ
+  const demoPin = localStorage.getItem(STORAGE_KEYS.DEMO_PIN) || '1234';
+  if (cleanPin !== demoPin) {
+    return { ok: false, error: 'Mã PIN Admin không chính xác.' };
+  }
+
+  const nowFull = getNowGMT7(true);
+  const stamp = nowFull.replace(/[-: ]/g, '').slice(0, 12);
+  const existingArchives = loadLocalArchives();
+  const uniqueCode = ensureUniqueLocalArchiveCode(normalizedArchiveCode, existingArchives);
+  const activeExpenses = currentState.expenses.filter((e) => !e.deleted && e.type !== 'transfer');
+  const totalExpense = activeExpenses.reduce((sum, e) => sum + Math.round(e.amount || 0), 0);
+
+  const summary: ArchivedTripSummary = {
+    archiveCode: uniqueCode,
+    tripId: currentState.config.tripId || uniqueCode,
+    tripName: currentState.config.tripName || uniqueCode,
+    location: currentState.config.location || '',
+    startDate: currentState.config.startDate || '',
+    endDate: currentState.config.endDate || '',
+    archivedAt: nowFull,
+    archivedBy: actor || 'admin',
+    expenseSheetName: `Archive_${uniqueCode.slice(0, 24)}_${stamp}`,
+    expenseCount: activeExpenses.length,
+    totalExpense,
+    memberCount: getTotalHeadcount(currentState.members),
+  };
+
+  const snapshot: ArchivedTripSnapshot = {
+    summary,
+    config: { ...currentState.config, tripStatus: 'completed' },
+    members: normalizeMembersList(currentState.members),
+    categories: sortCategoriesTailOrder(currentState.categories),
+    expenses: currentState.expenses.map((e) => ({ ...e, syncStatus: 'synced' })),
+  };
+
+  saveLocalArchives([snapshot, ...existingArchives]);
+
+  const updatedState: AppStateData = {
+    config: nextConfig,
+    members: initialMembers,
+    categories: nextCategories,
+    expenses: [],
+    history: [
+      {
+        timestamp: nowFull,
+        actor: actor || 'admin',
+        action: 'ARCHIVE_AND_NEW_TRIP',
+        entityType: 'Archive',
+        entityId: uniqueCode,
+        rev: 1,
+        beforeJson: JSON.stringify({ archiveCode: uniqueCode }),
+        afterJson: JSON.stringify({ newTripId: nextConfig.tripId, newTripName: nextConfig.tripName }),
+      },
+      ...currentState.history.slice(0, 49),
+    ],
+    lastSyncedAt: nowFull.slice(0, 16),
+  };
+
+  saveAppState(updatedState);
+  saveSyncQueue([]);
+  return { ok: true, archiveSummary: summary, nextState: updatedState };
+}
+
+/**
+ * Lấy danh sách các chuyến đi đã lưu trữ (chỉ Admin đã mở PIN mới được phép gọi).
+ */
+export async function listArchivedTrips(adminPin: string): Promise<{
+  ok: boolean;
+  archives?: ArchivedTripSummary[];
+  error?: string;
+}> {
+  const cleanPin = adminPin.trim();
+  if (!cleanPin) {
+    return { ok: false, error: 'Cần mở khóa quyền Admin để xem danh sách chuyến đã lưu trữ.' };
+  }
+
+  const gasUrl = getGasUrl();
+  if (gasUrl) {
+    if (!navigator.onLine || getSimulateOffline()) {
+      return { ok: false, error: 'Cần kết nối Internet để tải danh sách chuyến cũ từ Google Sheet.' };
+    }
+    try {
+      const res = await postToGas(gasUrl, {
+        action: 'listArchivedTrips',
+        adminPin: cleanPin,
+      });
+      if (!res?.ok) {
+        return {
+          ok: false,
+          error: mapGasArchiveActionError(
+            res?.message || res?.error,
+            'Không thể tải danh sách chuyến đi đã lưu trữ.'
+          ),
+        };
+      }
+      return {
+        ok: true,
+        archives: Array.isArray(res.archives) ? (res.archives as ArchivedTripSummary[]) : [],
+      };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Lỗi kết nối khi tải danh sách chuyến cũ.' };
+    }
+  }
+
+  const demoPin = localStorage.getItem(STORAGE_KEYS.DEMO_PIN) || '1234';
+  if (cleanPin !== demoPin) {
+    return { ok: false, error: 'Mã PIN Admin không chính xác.' };
+  }
+  const localArchives = loadLocalArchives()
+    .map((item) => item.summary)
+    .sort((a, b) => String(b.archivedAt).localeCompare(String(a.archivedAt)));
+  return { ok: true, archives: localArchives };
+}
+
+/**
+ * Tra cứu chi tiết 1 chuyến đi cũ theo mã trip (chỉ Admin đã mở PIN).
+ */
+export async function fetchArchivedTripByCode(
+  adminPin: string,
+  tripCode: string
+): Promise<{
+  ok: boolean;
+  snapshot?: ArchivedTripSnapshot;
+  error?: string;
+}> {
+  const cleanPin = adminPin.trim();
+  if (!cleanPin) {
+    return { ok: false, error: 'Cần mở khóa quyền Admin để tra cứu dữ liệu chuyến đi cũ.' };
+  }
+  const cleanCode = tripCode.trim();
+  if (!cleanCode) {
+    return { ok: false, error: 'Vui lòng nhập mã chuyến đi cần tra cứu.' };
+  }
+
+  const gasUrl = getGasUrl();
+  if (gasUrl) {
+    if (!navigator.onLine || getSimulateOffline()) {
+      return { ok: false, error: 'Cần kết nối Internet để tra cứu chuyến đi cũ từ Google Sheet.' };
+    }
+    try {
+      const res = await postToGas(gasUrl, {
+        action: 'getArchivedTrip',
+        adminPin: cleanPin,
+        tripCode: cleanCode,
+      });
+      if (!res?.ok || !res.snapshot) {
+        return {
+          ok: false,
+          error: mapGasArchiveActionError(
+            res?.message || res?.error,
+            `Không tìm thấy chuyến đi với mã "${cleanCode}".`
+          ),
+        };
+      }
+      const rawSnap = res.snapshot;
+      const snapshot: ArchivedTripSnapshot = {
+        summary: rawSnap.summary,
+        config: { ...parseRemoteTripConfig(rawSnap.config), tripStatus: 'completed' },
+        members: normalizeMembersList(Array.isArray(rawSnap.members) ? rawSnap.members : []),
+        categories: sortCategoriesTailOrder(
+          Array.isArray(rawSnap.categories) && rawSnap.categories.length > 0
+            ? rawSnap.categories
+            : DEFAULT_CATEGORIES
+        ),
+        expenses: normalizeRemoteExpenses(rawSnap.expenses),
+      };
+      return { ok: true, snapshot };
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Lỗi mạng khi tra cứu chuyến đi cũ.' };
+    }
+  }
+
+  const demoPin = localStorage.getItem(STORAGE_KEYS.DEMO_PIN) || '1234';
+  if (cleanPin !== demoPin) {
+    return { ok: false, error: 'Mã PIN Admin không chính xác.' };
+  }
+
+  const upperQuery = cleanCode.toUpperCase();
+  const normalizedQuery = normalizeTripCode(cleanCode);
+  const localArchives = loadLocalArchives();
+  const matched = localArchives.find((item) => {
+    const code = String(item.summary.archiveCode || '').trim().toUpperCase();
+    const tid = String(item.summary.tripId || '').trim().toUpperCase();
+    const sheet = String(item.summary.expenseSheetName || '').trim().toUpperCase();
+    return (
+      code === upperQuery ||
+      tid === upperQuery ||
+      sheet === upperQuery ||
+      code === normalizedQuery ||
+      tid === normalizedQuery
+    );
+  });
+
+  if (!matched) {
+    return { ok: false, error: `Không tìm thấy chuyến đi lưu trữ với mã "${cleanCode}".` };
+  }
+
+  return {
+    ok: true,
+    snapshot: {
+      summary: matched.summary,
+      config: { ...DEFAULT_TRIP_CONFIG, ...matched.config, tripStatus: 'completed' },
+      members: normalizeMembersList(matched.members || []),
+      categories: sortCategoriesTailOrder(matched.categories || DEFAULT_CATEGORIES),
+      expenses: normalizeRemoteExpenses(matched.expenses),
+    },
+  };
+}
+

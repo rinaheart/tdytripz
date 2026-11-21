@@ -14,7 +14,13 @@ import {
   formatVND,
   getNowGMT7,
 } from './format';
-import { calculateBalances, simplifyDebts } from './math';
+import {
+  calculateBalances,
+  getMemberGroupSize,
+  getTotalHeadcount,
+  simplifyDebts,
+  splitPerGroupMember,
+} from './math';
 
 export type DayBucketKind = 'pre' | 'trip' | 'post' | 'unknown';
 
@@ -82,11 +88,17 @@ export interface EnrichedMemberBalance extends MemberBalance {
   memberName: string;
   avatarColor: string;
   bankInfo: string;
+  groupSize: number;
+  perPersonOwedExpense: number;
+  perPersonBalance: number;
 }
 
 export interface EnrichedDebtTransaction extends DebtTransaction {
   fromMemberName: string;
   fromAvatarColor: string;
+  fromGroupSize: number;
+  perPersonAmount: number;
+  perPersonIsExact: boolean;
   toMemberName: string;
   toAvatarColor: string;
   toBankInfo: string;
@@ -96,7 +108,10 @@ export interface SettlementSenderItem {
   fromMemberId: string;
   fromName: string;
   fromAvatarColor: string;
+  fromGroupSize: number;
   amount: number;
+  perPersonAmount: number;
+  perPersonIsExact: boolean;
 }
 
 export interface SettlementRecipientGroup {
@@ -114,6 +129,7 @@ export interface MemberCardPayTarget {
   toName: string;
   toAvatarColor: string;
   amount: number;
+  perPersonAmount: number;
 }
 
 export interface MemberCardData {
@@ -121,10 +137,14 @@ export interface MemberCardData {
   memberName: string;
   avatarColor: string;
   bankInfo: string;
+  groupSize: number;
   paidExpense: number;
   owedExpense: number;
+  perPersonOwedExpense: number;
   netTransfer: number;
   balance: number;
+  perPersonBalance: number;
+  perPersonBalanceIsExact: boolean;
   direction: 'pay' | 'receive' | 'settled';
   payTo: MemberCardPayTarget[];
   receiveFromCount: number;
@@ -473,7 +493,11 @@ export function buildParticipantsInfo(
     return { kind: 'names', text: names.join(', ') };
   }
 
-  return { kind: 'count', text: `${names.length} người` };
+  const totalHeadcount = participantIds.reduce(
+    (sum, id) => sum + getMemberGroupSize(memberMap.get(id)),
+    0
+  );
+  return { kind: 'count', text: `${totalHeadcount} người` };
 }
 
 function computeTripDays(
@@ -502,7 +526,7 @@ export function buildExpenseReportData(params: {
   const { config, members, categories, expenses } = params;
 
   const activeMembers = members.filter((m) => m.active !== false);
-  const memberCount = activeMembers.length;
+  const memberCount = getTotalHeadcount(activeMembers);
   const memberMap = new Map<string, Member>();
   for (const m of members) {
     memberMap.set(m.id, m);
@@ -698,15 +722,21 @@ export function buildExpenseReportData(params: {
   const rawBalances = calculateBalances(activeMembers, allActiveRecords);
   const enrichedBalances: EnrichedMemberBalance[] = rawBalances.map((b) => {
     const m = memberMap.get(b.memberId);
+    const groupSize = getMemberGroupSize(m);
+    const perPersonOwed = splitPerGroupMember(b.owedExpense, groupSize);
+    const perPersonBal = splitPerGroupMember(b.balance, groupSize);
     return {
       ...b,
       memberName: m?.name || b.memberId,
       avatarColor: m?.avatarColor || '#0f766e',
       bankInfo: formatMemberBankInfo(m),
+      groupSize,
+      perPersonOwedExpense: perPersonOwed.perPerson,
+      perPersonBalance: perPersonBal.perPerson,
     };
   });
 
-  const owedAmounts = enrichedBalances.map((b) => b.owedExpense);
+  const owedAmounts = enrichedBalances.map((b) => b.perPersonOwedExpense);
   const minOwedExpense = owedAmounts.length > 0 ? Math.min(...owedAmounts) : 0;
   const maxOwedExpense = owedAmounts.length > 0 ? Math.max(...owedAmounts) : 0;
   const averageSubtext = formatOwedRangeSubtext(owedAmounts, memberCount);
@@ -714,10 +744,15 @@ export function buildExpenseReportData(params: {
   const simplifiedDebts: EnrichedDebtTransaction[] = simplifyDebts(rawBalances).map((d) => {
     const fromM = memberMap.get(d.fromMemberId);
     const toM = memberMap.get(d.toMemberId);
+    const fromGroupSize = getMemberGroupSize(fromM);
+    const perPerson = splitPerGroupMember(d.amount, fromGroupSize);
     return {
       ...d,
       fromMemberName: fromM?.name || d.fromMemberId,
       fromAvatarColor: fromM?.avatarColor || '#be123c',
+      fromGroupSize,
+      perPersonAmount: perPerson.perPerson,
+      perPersonIsExact: perPerson.isExact,
       toMemberName: toM?.name || d.toMemberId,
       toAvatarColor: toM?.avatarColor || '#0f766e',
       toBankInfo: formatMemberBankInfo(toM),
@@ -742,7 +777,10 @@ export function buildExpenseReportData(params: {
       fromMemberId: debt.fromMemberId,
       fromName: debt.fromMemberName,
       fromAvatarColor: debt.fromAvatarColor,
+      fromGroupSize: debt.fromGroupSize,
       amount: debt.amount,
+      perPersonAmount: debt.perPersonAmount,
+      perPersonIsExact: debt.perPersonIsExact,
     });
     recipientGroupMap.set(debt.toMemberId, existing);
   }
@@ -778,11 +816,12 @@ export function buildExpenseReportData(params: {
         toName: d.toMemberName,
         toAvatarColor: d.toAvatarColor,
         amount: d.amount,
+        perPersonAmount: d.perPersonAmount,
       }));
 
-    const receiveFromCount = simplifiedDebts.filter(
-      (d) => d.toMemberId === bal.memberId
-    ).length;
+    const receiveFromCount = simplifiedDebts
+      .filter((d) => d.toMemberId === bal.memberId)
+      .reduce((sum, d) => sum + d.fromGroupSize, 0);
 
     const personalCatMap = new Map<
       string,
@@ -830,16 +869,21 @@ export function buildExpenseReportData(params: {
 
     const direction: 'pay' | 'receive' | 'settled' =
       bal.balance < 0 ? 'pay' : bal.balance > 0 ? 'receive' : 'settled';
+    const perPersonBalSplit = splitPerGroupMember(bal.balance, bal.groupSize);
 
     return {
       memberId: bal.memberId,
       memberName: bal.memberName,
       avatarColor: bal.avatarColor,
       bankInfo: bal.bankInfo,
+      groupSize: bal.groupSize,
       paidExpense: bal.paidExpense,
       owedExpense: bal.owedExpense,
+      perPersonOwedExpense: bal.perPersonOwedExpense,
       netTransfer: bal.netTransfer,
       balance: bal.balance,
+      perPersonBalance: perPersonBalSplit.perPerson,
+      perPersonBalanceIsExact: perPersonBalSplit.isExact,
       direction,
       payTo,
       receiveFromCount,

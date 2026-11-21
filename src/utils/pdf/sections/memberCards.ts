@@ -120,13 +120,26 @@ function drawSingleMemberCard(
     'duotone-circle'
   );
 
-  // 2. Số dư có dấu cỡ lớn (13,5pt đậm, giữ ₫)
-  const sign = card.balance > 0 ? '+' : '';
-  const balanceStr = `${sign}${formatVND(card.balance, false)} ₫`;
+  // 2. Số dư có dấu cỡ lớn (13,5pt đậm, giữ ₫; với nhóm gộp hiển thị /người + tổng nhóm)
+  const isGroup = card.groupSize > 1;
+  const displayBal = isGroup ? card.perPersonBalance : card.balance;
+  const sign = displayBal > 0 ? '+' : '';
+  const balanceStr = isGroup
+    ? `${card.perPersonBalanceIsExact ? '' : '~'}${sign}${formatVND(displayBal, false)} ₫/ng`
+    : `${sign}${formatVND(card.balance, false)} ₫`;
   doc.setFont(activeFont, 'bold');
-  doc.setFontSize(FONT_CARD_BALANCE);
+  doc.setFontSize(isGroup ? 11.5 : FONT_CARD_BALANCE);
   doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
   doc.text(balanceStr, x + 3.4, y + 15.0);
+
+  if (isGroup) {
+    const totalSign = card.balance > 0 ? '+' : '';
+    const groupNote = `Tổng ${card.groupSize}: ${totalSign}${formatVND(card.balance, false)}`;
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(FONT_CAPTION);
+    doc.setTextColor(...COLOR_SLATE);
+    doc.text(groupNote, x + width - 3.4, y + 14.8, { align: 'right' });
+  }
 
   // 3. Dòng hành động:
   // - Người cần chuyển: `→ [Avatar] Nhi` (nếu nhiều người nhận thì liệt kê)
@@ -166,7 +179,10 @@ function drawSingleMemberCard(
       );
       curX = nextX;
       if (card.payTo.length > 1) {
-        const amtPart = ` (${formatVND(target.amount, false)})`;
+        const displayTargetAmt = isGroup ? target.perPersonAmount : target.amount;
+        const amtPart = isGroup
+          ? ` (${formatVND(displayTargetAmt, false)}/ng)`
+          : ` (${formatVND(displayTargetAmt, false)})`;
         doc.setFont(activeFont, 'normal');
         doc.setFontSize(FONT_CAPTION);
         doc.setTextColor(...COLOR_SLATE);
@@ -193,10 +209,13 @@ function drawSingleMemberCard(
 
   // 4. Ba chỉ số nhỏ: `Đã chi`, `Phải chịu`, và `Đã chuyển` chỉ khi `netTransfer !== 0`
   const hasNetTransfer = card.netTransfer !== 0;
+  const owedDisplay = isGroup
+    ? `${formatVND(card.perPersonOwedExpense, false)}/ng (${formatVND(card.owedExpense, false)})`
+    : formatVND(card.owedExpense, false);
   const metricCols = hasNetTransfer
     ? [
         { label: 'Đã chi', value: formatVND(card.paidExpense, false) },
-        { label: 'Phải chịu', value: formatVND(card.owedExpense, false) },
+        { label: 'Phải chịu', value: owedDisplay },
         {
           label: card.netTransfer > 0 ? 'Đã chuyển' : 'Đã nhận trước',
           value: `${card.netTransfer > 0 ? '+' : ''}${formatVND(card.netTransfer, false)}`,
@@ -204,7 +223,7 @@ function drawSingleMemberCard(
       ]
     : [
         { label: 'Đã chi', value: formatVND(card.paidExpense, false) },
-        { label: 'Phải chịu', value: formatVND(card.owedExpense, false) },
+        { label: 'Phải chịu', value: owedDisplay },
       ];
 
   const innerW = width - 6.8;

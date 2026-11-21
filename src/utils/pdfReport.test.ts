@@ -23,7 +23,7 @@ import {
   parseSvgPathToSubpaths,
   resolveLucideIconKey,
 } from './pdfLucideIcons';
-import { splitEqual } from './math';
+import { splitEqual, splitEqualWeighted } from './math';
 import type { Category, ExpenseRecord, Member, TripConfig } from '../types';
 
 const loadedFonts: PdfFontData = {
@@ -602,3 +602,71 @@ test('9. LUCIDE_ICON_NODES đồng bộ 100% với bộ icon lucide-react đã c
   assert.equal(resolveLucideIconKey('ArrowUpRight'), 'ArrowUpRight');
   assert.equal(resolveLucideIconKey('ArrowDownLeft'), 'ArrowDownLeft');
 });
+
+test('10. Báo cáo PDF hỗ trợ username gộp nhóm ("10 thành viên") chuẩn xác từng người và tổng nhóm', () => {
+  const groupMembers: Member[] = [
+    hanoiMembers[0], // Duy (1)
+    hanoiMembers[4], // Nhi (1)
+    {
+      id: 'm_group10',
+      name: '10 thành viên',
+      avatarColor: '#065f46',
+      defaultWeight: 10,
+      bankName: '',
+      accountNo: '',
+      accountHolder: '',
+      active: true,
+    },
+  ];
+  const weights = { m_duy: 1, m_nhi: 1, m_group10: 10 };
+  const exp: ExpenseRecord = {
+    id: 'exp_pdf_group_1',
+    rev: 1,
+    type: 'expense',
+    title: 'Liên hoan cả đoàn',
+    amount: 2400000,
+    payer: 'm_nhi',
+    splits: splitEqualWeighted(2400000, ['m_duy', 'm_nhi', 'm_group10'], weights, 'exp_pdf_group_1'),
+    splitMode: 'equal',
+    categoryId: 'cat_food',
+    spentAt: '2026-10-22 19:00',
+    createdBy: 'm_nhi',
+    createdAt: '2026-10-22 19:00:00',
+    updatedBy: 'm_nhi',
+    updatedAt: '2026-10-22 19:00:00',
+    deleted: false,
+    note: '',
+  };
+
+  const report = buildExpenseReportData({
+    config: hanoiConfig,
+    members: groupMembers,
+    categories: hanoiCategories,
+    expenses: [exp],
+  });
+
+  // 1 + 1 + 10 = 12 người, bình quân 200.000 ₫/người, subtext "12 thành viên"
+  assert.equal(report.overview.memberCount, 12);
+  assert.equal(report.overview.averagePerMember, 200000);
+  assert.equal(report.overview.averageSubtext, '12 thành viên');
+
+  // Quyết toán: Nhi nhận từ 11 người (Duy 1 + 10 thành viên 10), nhóm chuyển 200k/người (tổng 2tr)
+  assert.equal(report.settlementGroups.length, 1);
+  const groupSender = report.settlementGroups[0].senders.find((s) => s.fromMemberId === 'm_group10')!;
+  assert.equal(groupSender.fromGroupSize, 10);
+  assert.equal(groupSender.amount, 2000000);
+  assert.equal(groupSender.perPersonAmount, 200000);
+  assert.equal(groupSender.perPersonIsExact, true);
+
+  const nhiCard = report.memberCards.find((c) => c.memberId === 'm_nhi')!;
+  assert.equal(nhiCard.receiveFromCount, 11);
+
+  const groupCard = report.memberCards.find((c) => c.memberId === 'm_group10')!;
+  assert.equal(groupCard.groupSize, 10);
+  assert.equal(groupCard.perPersonBalance, -200000);
+  assert.equal(groupCard.perPersonOwedExpense, 200000);
+
+  const doc = buildPdfDocument(report, loadedFonts);
+  assert.ok(doc.getNumberOfPages() >= 2);
+});
+
