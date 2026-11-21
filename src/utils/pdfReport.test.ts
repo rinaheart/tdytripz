@@ -670,3 +670,153 @@ test('10. Báo cáo PDF hỗ trợ username gộp nhóm ("10 thành viên") chu�
   assert.ok(doc.getNumberOfPages() >= 2);
 });
 
+test('11. Audit dữ liệu thực tế từ tdytripz.vercel.app (Liên hoan 20.11.2026 - 1 ngày, nhóm 8 thành viên, 2 chuyển trả trước)', () => {
+  const liveConfig: TripConfig = {
+    tripId: '20261120-LIEN-HOAN',
+    tripName: 'Liên hoan 20.11.2026',
+    location: 'Nếp (Huế)',
+    startDate: '2026-11-20',
+    endDate: '2026-11-20',
+    tripStatus: 'active',
+    defaultSplitMode: 'equal',
+    enabledSplitModes: ['equal', 'shares', 'exact'],
+    suggestMultipliers: [1000, 10000, 100000],
+    maxSuggestAmount: 20000000,
+    accentColor: '#000777',
+  };
+
+  const liveMembers: Member[] = [
+    { id: 'mem_1a076343', name: '8 thành viên', avatarColor: '#5b21b6', defaultWeight: 8, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'm1', name: 'Duy', avatarColor: '#000777', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'm2', name: 'Đức', avatarColor: '#1e40af', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'mem_50b88155', name: 'Hòa', avatarColor: '#92400e', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+    { id: 'mem_75469aed', name: 'Loan', avatarColor: '#9f1239', defaultWeight: 1, bankName: '', accountNo: '', accountHolder: '', active: true },
+  ];
+
+  const liveExpenses: ExpenseRecord[] = [
+    {
+      id: '1c0c98f6-8ef1-4741-9302-aa0cbaed05e0',
+      rev: 2,
+      type: 'expense',
+      title: 'Phí cọc VIP',
+      amount: 500000,
+      payer: 'm2',
+      splits: { mem_50b88155: 45455, m1: 45455, m2: 45454, mem_1a076343: 363636 },
+      splitMode: 'equal',
+      categoryId: 'cat_other',
+      spentAt: '2026-11-18 20:33',
+      createdBy: 'm1',
+      createdAt: '2026-11-21 14:35',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-21 14:40',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: '3d90ec4c-78c9-4ad8-92e9-113a559cccc4',
+      rev: 2,
+      type: 'expense',
+      title: 'Setup quà, thiệp, hoa, bánh, sữa chua',
+      amount: 980000,
+      payer: 'm1',
+      splits: { mem_50b88155: 89091, m1: 89091, m2: 89091, mem_1a076343: 712727 },
+      splitMode: 'equal',
+      categoryId: 'cat_other',
+      spentAt: '2026-11-20 17:30',
+      createdBy: 'm1',
+      createdAt: '2026-11-21 14:37',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-21 14:39',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: 'a6736f77-caf8-4f9c-b97e-ddad88c487e6',
+      rev: 1,
+      type: 'transfer',
+      title: 'Hòa chuyển cho Duy',
+      amount: 400000,
+      payer: 'mem_50b88155',
+      splits: { m1: 400000 },
+      splitMode: 'exact',
+      categoryId: 'cat_other',
+      spentAt: '2026-11-19 15:30',
+      createdBy: 'm1',
+      createdAt: '2026-11-21 14:38',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-21 14:38',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: 'ecbc2ff1-e710-4abb-94a6-f004ff9ed7f3',
+      rev: 1,
+      type: 'transfer',
+      title: 'Loan chuyển cho Duy',
+      amount: 200000,
+      payer: 'mem_75469aed',
+      splits: { m1: 200000 },
+      splitMode: 'exact',
+      categoryId: 'cat_other',
+      spentAt: '2026-11-19 15:00',
+      createdBy: 'm1',
+      createdAt: '2026-11-21 14:40',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-21 14:40',
+      deleted: false,
+      note: '',
+    },
+    {
+      id: 'b3c7b945-e180-40a7-b37b-dabfd91d770e',
+      rev: 1,
+      type: 'expense',
+      title: 'Thanh toán Nhà hàng Nếp',
+      amount: 3872000,
+      payer: 'mem_50b88155',
+      splits: { m1: 322667, m2: 322667, mem_50b88155: 322667, mem_75469aed: 322666, mem_1a076343: 2581333 },
+      splitMode: 'equal',
+      categoryId: 'cat_food',
+      spentAt: '2026-11-20 21:00',
+      createdBy: 'm1',
+      createdAt: '2026-11-21 14:42',
+      updatedBy: 'm1',
+      updatedAt: '2026-11-21 14:42',
+      deleted: false,
+      note: '',
+    },
+  ];
+
+  const report = buildExpenseReportData({
+    config: liveConfig,
+    members: liveMembers,
+    categories: hanoiCategories,
+    expenses: liveExpenses,
+  });
+
+  // 1. Sự kiện 1 ngày không bị lặp "20–20/11/2026" và không thừa "Ngày 1"
+  assert.equal(report.dateRangeLabel, '20/11/2026');
+  assert.deepEqual(
+    report.overview.byDay.map((d) => d.label),
+    ['Trước chuyến', '20/11']
+  );
+  assert.deepEqual(
+    report.ledger.map((g) => g.label),
+    ['Trước chuyến', 'Thứ Sáu 20/11']
+  );
+
+  // 2. Per-creditor netTransfer chính xác tuyệt đối: Hòa (+400.000 đã CK trước), Đức (0)
+  const hoaGrp = report.settlementGroups.find((g) => g.toName === 'Hòa')!;
+  const ducGrp = report.settlementGroups.find((g) => g.toName === 'Đức')!;
+  assert.equal(hoaGrp.total, 3814787);
+  assert.equal(hoaGrp.netTransfer, 400000);
+  assert.equal(hoaGrp.receivedTransferAmount, 0);
+  assert.equal(ducGrp.total, 42788);
+  assert.equal(ducGrp.netTransfer, 0);
+  assert.equal(ducGrp.receivedTransferAmount, 0);
+
+  // 3. Phân trang thông minh: sổ chi tiết 5 dòng ghép gọn ngay Trang 1 -> tổng đúng 2 trang cân đối
+  const doc = buildPdfDocument(report, loadedFonts);
+  assert.equal(doc.getNumberOfPages(), 2);
+});
+
+

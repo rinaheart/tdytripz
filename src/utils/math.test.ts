@@ -549,7 +549,7 @@ test('splitEqualWeighted & splitPerGroupMember - case n1 người chi + n2 ngư�
   );
 });
 
-test('formatSettlementReportForChat - xuất báo cáo nhanh gọn nhẹ cho Zalo/Messenger hỗ trợ nhóm gộp', () => {
+test('formatSettlementReportForChat - xuất quyết toán ngắn gọn & đầy đủ cho Zalo/Messenger', () => {
   const membersWithGroup: Member[] = [
     { ...mockMembers[0], id: 'm1', name: 'Duy', accountNo: '00123456', bankName: 'MB', accountHolder: 'NGUYEN DUY' },
     { ...mockMembers[1], id: 'm2', name: 'Dương', accountNo: '654321', bankName: 'VCB', accountHolder: '' },
@@ -589,7 +589,8 @@ test('formatSettlementReportForChat - xuất báo cáo nhanh gọn nhẹ cho Zal
   const balances = calculateBalances(membersWithGroup, expenses);
   const transactions = simplifyDebts(balances);
 
-  const report = formatSettlementReportForChat({
+  // Chế độ mặc định (Ngắn gọn): Không có bảng thu chi, không NBSP, gom trùng STK
+  const compactReport = formatSettlementReportForChat({
     config: {
       tripName: 'Team Building',
       location: 'Đà Lạt',
@@ -603,13 +604,102 @@ test('formatSettlementReportForChat - xuất báo cáo nhanh gọn nhẹ cho Zal
     viewMode: 'simplified',
   });
 
-  assert.match(report, /📊 QUYẾT TOÁN: Team Building - Đà Lạt \(20–22\/11\/2026\)/);
-  assert.match(report, /Tổng chi: 1\.200\.000\u00A0₫ \(1 khoản\) • 12 người/);
-  assert.match(report, /Bình quân: ~100\.000\u00A0₫\/người/);
-  assert.match(report, /💸 CẦN CHUYỂN \(Tối giản - 2 khoản\):/);
-  assert.match(report, /10 thành viên → Duy: 100\.000\u00A0₫\/người \(Tổng 10 người: 1\.000\.000\u00A0₫\)/);
-  assert.match(report, /STK: 00123456 \(MB\) - NGUYEN DUY/);
-  assert.match(report, /• 10 thành viên \(÷10\): Chi 0 \| Chịu 1\.000\.000 \(100\.000\/ng\) \| -1\.000\.000 \(-100\.000\/ng\)/);
+  assert.equal(compactReport.includes('\u00A0'), false, 'Không chứa ký tự NBSP khi dán Zalo');
+  assert.match(compactReport, /📊 QUYẾT TOÁN: Team Building - Đà Lạt \(20–22\/11\/2026\)/);
+  assert.match(compactReport, /Tổng chi: 1\.200\.000 ₫ \(1 khoản · 12 người · ~100\.000 ₫\/người\)/);
+  assert.match(compactReport, /💸 CẦN CHUYỂN \(Tối giản · 2 khoản\):/);
+  assert.match(compactReport, /10 thành viên → Duy: 100\.000 ₫\/người \(tổng 10 người: 1\.000\.000 ₫\)/);
+  assert.match(compactReport, /🏦 STK NHẬN TIỀN:\n• Duy: 00123456 \(MB\) - NGUYEN DUY/);
+  // Dù có 2 khoản chuyển cho Duy, STK của Duy chỉ xuất hiện đúng 1 lần
+  assert.equal(compactReport.match(/00123456/g)?.length, 1);
+  assert.equal(compactReport.includes('📌 TÓM TẮT THU CHI'), false);
+
+  // Chế độ đầy đủ (includeBalances: true)
+  const fullReport = formatSettlementReportForChat({
+    config: {
+      tripName: 'Team Building',
+      location: 'Đà Lạt',
+      startDate: '2026-11-20',
+      endDate: '2026-11-22',
+    },
+    members: membersWithGroup,
+    expenses,
+    balances,
+    transactions,
+    viewMode: 'simplified',
+    includeBalances: true,
+  });
+  assert.match(
+    fullReport,
+    /• 10 thành viên \(÷10\): Chi 0 · Chịu 100\.000\/ng → Trả 100\.000\/ng \(tổng 1\.000\.000\)/
+  );
+
+  // Trường hợp thực tế 1 ngày (20/11/2026), có chuyển khoản trước & nhóm gộp 8 thành viên
+  const realMembers: Member[] = [
+    { id: 'm_g8', name: '8 thành viên', avatarColor: '#64748b', bankName: '', accountNo: '', accountHolder: '', active: true, defaultWeight: 8 },
+    { id: 'm_duy', name: 'Duy', avatarColor: '#0f766e', bankName: 'MB', accountNo: '', accountHolder: '', active: true, defaultWeight: 1 },
+    { id: 'm_duc', name: 'Đức', avatarColor: '#0369a1', bankName: 'VCB', accountNo: '0123456789', accountHolder: 'TRAN DUC', active: true, defaultWeight: 1 },
+    { id: 'm_hoa', name: 'Hòa', avatarColor: '#b45309', bankName: 'TCB', accountNo: '190388889999', accountHolder: 'LE HOA', active: true, defaultWeight: 1 },
+    { id: 'm_loan', name: 'Loan', avatarColor: '#be185d', bankName: '', accountNo: '', accountHolder: '', active: true, defaultWeight: 1 },
+  ];
+  const realExpenses: ExpenseRecord[] = [
+    {
+      id: 'e1', type: 'expense', title: 'Đặt bàn', amount: 980000, payer: 'm_duy', categoryId: 'cat_food',
+      spentAt: '2026-11-20 18:00', splitMode: 'exact',
+      splits: { m_g8: 653333, m_duy: 81667, m_duc: 81667, m_hoa: 81667, m_loan: 81666 },
+      createdBy: 'm_duy', createdAt: '2026-11-20 18:00:00', updatedBy: 'm_duy', updatedAt: '2026-11-20 18:00:00', rev: 1, deleted: false, note: '',
+    },
+    {
+      id: 'e2', type: 'expense', title: 'Đồ uống', amount: 500000, payer: 'm_duc', categoryId: 'cat_food',
+      spentAt: '2026-11-20 19:00', splitMode: 'exact',
+      splits: { m_g8: 333333, m_duy: 41667, m_duc: 41667, m_hoa: 41667, m_loan: 41666 },
+      createdBy: 'm_duc', createdAt: '2026-11-20 19:00:00', updatedBy: 'm_duc', updatedAt: '2026-11-20 19:00:00', rev: 1, deleted: false, note: '',
+    },
+    {
+      id: 'e3', type: 'expense', title: 'Tiệc chính', amount: 3872000, payer: 'm_hoa', categoryId: 'cat_food',
+      spentAt: '2026-11-20 20:00', splitMode: 'exact',
+      splits: { m_g8: 2671030, m_duy: 333879, m_duc: 333878, m_hoa: 333879, m_loan: 199334 },
+      createdBy: 'm_hoa', createdAt: '2026-11-20 20:00:00', updatedBy: 'm_hoa', updatedAt: '2026-11-20 20:00:00', rev: 1, deleted: false, note: '',
+    },
+    {
+      id: 't1', type: 'transfer', title: 'Hòa chuyển Duy', amount: 400000, payer: 'm_hoa', categoryId: 'cat_transfer',
+      spentAt: '2026-11-20 21:00', splitMode: 'exact', splits: { m_duy: 400000 },
+      createdBy: 'm_hoa', createdAt: '2026-11-20 21:00:00', updatedBy: 'm_hoa', updatedAt: '2026-11-20 21:00:00', rev: 1, deleted: false, note: '',
+    },
+    {
+      id: 't2', type: 'transfer', title: 'Loan chuyển Duy', amount: 200000, payer: 'm_loan', categoryId: 'cat_transfer',
+      spentAt: '2026-11-20 21:05', splitMode: 'exact', splits: { m_duy: 200000 },
+      createdBy: 'm_loan', createdAt: '2026-11-20 21:05:00', updatedBy: 'm_loan', updatedAt: '2026-11-20 21:05:00', rev: 1, deleted: false, note: '',
+    },
+  ];
+  const realBalances = calculateBalances(realMembers, realExpenses);
+  const realDebts = simplifyDebts(realBalances);
+  const realFullReport = formatSettlementReportForChat({
+    config: {
+      tripName: 'Liên hoan 20.11.2026',
+      location: 'Nếp (Huế)',
+      startDate: '2026-11-20',
+      endDate: '2026-11-20',
+    },
+    members: realMembers,
+    expenses: realExpenses,
+    balances: realBalances,
+    transactions: realDebts,
+    viewMode: 'simplified',
+    includeBalances: true,
+  });
+
+  // Ngày 1 hôm hiển thị gọn 20/11/2026 thay vì 20–20/11/2026
+  assert.match(realFullReport, /📊 QUYẾT TOÁN: Liên hoan 20\.11\.2026 - Nếp \(Huế\) \(20\/11\/2026\)/);
+  assert.equal(realFullReport.includes('20–20/11/2026'), false);
+  assert.match(realFullReport, /Tổng chi: 5\.352\.000 ₫ \(3 khoản · 12 người · ~446\.000 ₫\/người\)/);
+  assert.match(realFullReport, /Đã chuyển trước: 600\.000 ₫ \(2 giao dịch\)/);
+  // Diễn giải rõ Đã nhận / Đã CK thay vì dấu +/- dễ hiểu nhầm
+  assert.match(realFullReport, /• Duy: Chi 980\.000 · Chịu 457\.213 · Đã nhận 600\.000 → Trả 77\.213/);
+  assert.match(realFullReport, /• Hòa: Chi 3\.872\.000 · Chịu 457\.213 · Đã CK 400\.000 → Nhận 3\.814\.787/);
+  assert.match(realFullReport, /• Loan: Chi 0 · Chịu 322\.666 · Đã CK 200\.000 → Trả 122\.666/);
+  // STK Hòa chỉ liệt kê đúng 1 lần dù nhận từ 3 khoản chuyển
+  assert.equal(realFullReport.match(/190388889999/g)?.length, 1);
 
   // Trường hợp không có khoản nợ nào (cân bằng)
   const emptyReport = formatSettlementReportForChat({
@@ -622,6 +712,7 @@ test('formatSettlementReportForChat - xuất báo cáo nhanh gọn nhẹ cho Zal
   });
   assert.match(emptyReport, /✅ CẦN CHUYỂN: Không có khoản nợ nào/);
 });
+
 
 
 

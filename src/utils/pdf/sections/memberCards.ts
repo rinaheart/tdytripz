@@ -9,6 +9,7 @@ import {
 } from '../primitives';
 import {
   CARD_RADIUS,
+  COLOR_AMBER_TEXT,
   COLOR_BORDER,
   COLOR_INK,
   COLOR_MUTED,
@@ -207,18 +208,19 @@ function drawSingleMemberCard(
   doc.setLineWidth(0.18);
   doc.line(x + 3.4, y + 23.8, x + width - 3.4, y + 23.8);
 
-  // 4. Ba chỉ số nhỏ: `Đã chi`, `Phải chịu`, và `Đã chuyển` chỉ khi `netTransfer !== 0`
+  // 4. Ba chỉ số nhỏ: `Đã chi`, `Phải chịu`, và `Đã CK trước` / `Đã nhận trước` chỉ khi `netTransfer !== 0`
   const hasNetTransfer = card.netTransfer !== 0;
   const owedDisplay = isGroup
     ? `${formatVND(card.perPersonOwedExpense, false)}/ng (${formatVND(card.owedExpense, false)})`
     : formatVND(card.owedExpense, false);
-  const metricCols = hasNetTransfer
+  const metricCols: Array<{ label: string; value: string; valueColor?: RGB }> = hasNetTransfer
     ? [
         { label: 'Đã chi', value: formatVND(card.paidExpense, false) },
         { label: 'Phải chịu', value: owedDisplay },
         {
-          label: card.netTransfer > 0 ? 'Đã chuyển' : 'Đã nhận trước',
-          value: `${card.netTransfer > 0 ? '+' : ''}${formatVND(card.netTransfer, false)}`,
+          label: card.netTransfer > 0 ? 'Đã CK trước' : 'Đã nhận trước',
+          value: formatVND(Math.abs(card.netTransfer), false),
+          valueColor: card.netTransfer > 0 ? COLOR_TEAL_DARK : COLOR_AMBER_TEXT,
         },
       ]
     : [
@@ -237,7 +239,8 @@ function drawSingleMemberCard(
 
     doc.setFont(activeFont, 'bold');
     doc.setFontSize(8.0);
-    doc.setTextColor(...COLOR_INK);
+    const colColor = m.valueColor || COLOR_INK;
+    doc.setTextColor(colColor[0], colColor[1], colColor[2]);
     doc.text(fitText(doc, m.value, metricColW - 1.5), mx, y + 32.0);
   });
 

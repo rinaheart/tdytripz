@@ -25,7 +25,7 @@ export function stampPageFooters(
     doc.setFont(activeFont, 'normal');
     doc.setFontSize(7.2);
     doc.setTextColor(...COLOR_MUTED);
-    doc.text(`TdyTrip • ${report.tripName} • Đơn vị: ₫`, MARGIN_X, pageHeight - 6.8);
+    doc.text(`TdyTripZ • ${report.tripName} • Đơn vị: ₫`, MARGIN_X, pageHeight - 6.8);
 
     doc.setFont(activeFont, 'bold');
     doc.text(`Trang ${p} / ${totalPages}`, pageWidth - MARGIN_X, pageHeight - 6.8, {

@@ -52,6 +52,18 @@ export function renderSettlementHero(
   doc.setFontSize(9.2);
   doc.setTextColor(...COLOR_INK);
   doc.text('Quyết toán', MARGIN_X + 5.4, y + 3.3);
+
+  if (report.overview.transferCount > 0 && report.overview.totalTransferAmount > 0) {
+    doc.setFont(activeFont, 'normal');
+    doc.setFontSize(FONT_CAPTION);
+    doc.setTextColor(...COLOR_SLATE);
+    doc.text(
+      `Đã cấn trừ ${formatVND(report.overview.totalTransferAmount, false)} ₫ chuyển trước (${report.overview.transferCount} giao dịch)`,
+      MARGIN_X + CONTENT_WIDTH,
+      y + 3.2,
+      { align: 'right' }
+    );
+  }
   y += 5.2;
 
   if (groups.length === 0) {
@@ -154,28 +166,35 @@ export function renderSettlementHero(
 
     const afterReceiveBadgeX = receiveBadgeX + doc.getTextWidth(receiveAmountStr);
 
-    const transferDeduction =
-      grp.receivedTransferAmount > 0
-        ? grp.receivedTransferAmount
-        : report.overview.totalTransferAmount;
-
-    if (transferDeduction > 0) {
-      doc.setFont(activeFont, 'normal');
-      doc.setFontSize(FONT_CAPTION);
-      doc.setTextColor(...COLOR_SLATE);
-      const noteStr = `(đã trừ ${formatVND(transferDeduction, false)} đã chuyển)`;
-      doc.text(noteStr, afterReceiveBadgeX + 2.4, headerBaselineY);
-    }
-
-    // Bên phải Header: STK in đúng 1 lần
+    // Bên phải Header: STK in đúng 1 lần (đo trước để tránh chồng chữ ghi chú)
+    let bankReservedW = 0;
     if (grp.bankInfo) {
       doc.setFont(activeFont, 'bold');
       doc.setFontSize(8.2);
       doc.setTextColor(...COLOR_INK);
       const bankStr = fitText(doc, grp.bankInfo, 66);
+      bankReservedW = doc.getTextWidth(bankStr) + 4.0;
       doc.text(bankStr, MARGIN_X + CONTENT_WIDTH - 4.0, headerBaselineY, {
         align: 'right',
       });
+    }
+
+    // Ghi chú chuyển khoản trước chỉ hiện cho đúng người nhận có phát sinh chuyển/nhận trước
+    if (grp.netTransfer !== 0) {
+      doc.setFont(activeFont, 'normal');
+      doc.setFontSize(FONT_CAPTION);
+      doc.setTextColor(...COLOR_SLATE);
+      const noteStr =
+        grp.netTransfer > 0
+          ? `(gồm ${formatVND(grp.netTransfer, false)} đã CK trước)`
+          : `(đã trừ ${formatVND(Math.abs(grp.netTransfer), false)} đã nhận trước)`;
+      const availNoteW = Math.max(
+        0,
+        MARGIN_X + CONTENT_WIDTH - 4.0 - bankReservedW - (afterReceiveBadgeX + 2.4)
+      );
+      if (availNoteW >= 18) {
+        doc.text(fitText(doc, noteStr, availNoteW), afterReceiveBadgeX + 2.4, headerBaselineY);
+      }
     }
 
     // Danh sách người chuyển bên dưới kèm thanh ngang tỉ lệ

@@ -4,11 +4,11 @@ import { type PdfFontData, registerPlusJakartaFonts } from './fonts';
 import { renderOverviewCharts } from './sections/charts';
 import { stampPageFooters } from './sections/footer';
 import { renderKpiRow } from './sections/kpi';
-import { renderLedgerSection } from './sections/ledger';
+import { estimateLedgerHeightMm, renderLedgerSection } from './sections/ledger';
 import { renderMasthead } from './sections/masthead';
 import { renderMemberCardsSection } from './sections/memberCards';
 import { renderSettlementHero } from './sections/settlement';
-import { MARGIN_TOP } from './theme';
+import { MARGIN_TOP, PAGE_HEIGHT, SAFE_BOTTOM } from './theme';
 
 export interface BuildPdfOptions {
   includeLedger?: boolean;
@@ -38,8 +38,8 @@ export function buildPdfDocument(
   doc.setProperties({
     title: `${report.tripName} - Báo cáo chi tiêu & quyết toán`,
     subject: `Báo cáo chuyến đi ${report.tripName} (${report.dateRangeLabel})`,
-    author: 'TdyTrip',
-    creator: 'TdyTrip',
+    author: 'TdyTripZ',
+    creator: 'TdyTripZ',
   });
 
   // ==========================================================================
@@ -48,13 +48,18 @@ export function buildPdfDocument(
   let cursorY = renderMasthead(doc, activeFont, report, MARGIN_TOP);
   cursorY = renderKpiRow(doc, activeFont, report, cursorY);
   cursorY = renderSettlementHero(doc, activeFont, report, cursorY);
-  renderOverviewCharts(doc, activeFont, report, cursorY);
+  cursorY = renderOverviewCharts(doc, activeFont, report, cursorY);
 
   // ==========================================================================
-  // TRANG 2+: SỔ CHI TIẾT GIAO DỊCH THEO NGÀY
+  // SỔ CHI TIẾT GIAO DỊCH THEO NGÀY:
+  // Nếu sổ chi tiết ngắn gọn và vừa trọn phần trống còn lại của Trang 1 thì ghép liền ngay dưới biểu đồ
+  // để tránh trang 2 bị trống 80%; nếu dài hơn thì sang Trang 2 riêng biệt.
   // ==========================================================================
   if (includeLedger) {
-    renderLedgerSection(doc, activeFont, report);
+    const remainingPage1Height = PAGE_HEIGHT - SAFE_BOTTOM - (cursorY + 1.5);
+    const estLedgerHeight = estimateLedgerHeightMm(report);
+    const fitsOnPage1 = doc.getNumberOfPages() === 1 && estLedgerHeight <= remainingPage1Height;
+    renderLedgerSection(doc, activeFont, report, fitsOnPage1 ? cursorY + 1.5 : undefined);
   }
 
   // ==========================================================================

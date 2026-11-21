@@ -41,15 +41,29 @@ type LedgerTableItem =
  * - Dòng `transfer`: nền tím nhạt, nội dung là cặp `[Avatar] A → [Avatar] B`.
  * - Cột `Chia`: hiện pill hổ phách `Chia riêng` khi `isCustomSplit === true`.
  */
+export function estimateLedgerHeightMm(report: ExpenseReportData): number {
+  const groupCount = report.ledger.length;
+  const rowCount = report.ledger.reduce((sum, g) => sum + g.rows.length, 0);
+  if (rowCount === 0) return 26;
+  // Tiêu đề mục (5.0) + thead (6.5) + group headers (5.2/nhóm) + data rows (5.8/dòng) + tfoot (7.0) + đệm an toàn (4.0)
+  return 5.0 + 6.5 + groupCount * 5.2 + rowCount * 5.8 + 7.0 + 4.0;
+}
+
 export function renderLedgerSection(
   doc: jsPDF,
   activeFont: string,
-  report: ExpenseReportData
+  report: ExpenseReportData,
+  inlineStartY?: number
 ): void {
-  doc.addPage();
-  let cursorY = MARGIN_TOP;
+  let cursorY: number;
+  if (typeof inlineStartY === 'number') {
+    cursorY = inlineStartY;
+  } else {
+    doc.addPage();
+    cursorY = MARGIN_TOP;
+  }
 
-  // Tiêu đề mục 1 dòng có icon ở đầu trang 2: "Sổ chi tiết • {n} khoản"
+  // Tiêu đề mục 1 dòng có icon: "Sổ chi tiết • {n} khoản" (kèm số giao dịch chuyển trả nếu có)
   drawLucideIcon(
     doc,
     'Calculator',
@@ -63,11 +77,11 @@ export function renderLedgerSection(
   doc.setFont(activeFont, 'bold');
   doc.setFontSize(9.4);
   doc.setTextColor(...COLOR_INK);
-  doc.text(
-    `Sổ chi tiết • ${report.overview.expenseCount} khoản`,
-    MARGIN_X + 5.4,
-    cursorY + 3.3
-  );
+  const ledgerHeading =
+    report.overview.transferCount > 0
+      ? `Sổ chi tiết • ${report.overview.expenseCount} khoản chi • ${report.overview.transferCount} chuyển trả`
+      : `Sổ chi tiết • ${report.overview.expenseCount} khoản`;
+  doc.text(ledgerHeading, MARGIN_X + 5.4, cursorY + 3.3);
   cursorY += 5.0;
 
   // Đo kích thước cột Giờ và Số tiền theo mẫu rộng nhất (không đặt cứng theo mắt)

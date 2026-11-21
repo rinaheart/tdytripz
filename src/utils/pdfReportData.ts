@@ -121,6 +121,8 @@ export interface SettlementRecipientGroup {
   bankInfo: string;
   total: number;
   receivedTransferAmount: number;
+  sentTransferAmount: number;
+  netTransfer: number;
   senders: SettlementSenderItem[];
 }
 
@@ -310,6 +312,14 @@ export function getDayBucket(
   const ddmm = `${String(d).padStart(2, '0')}/${String(m).padStart(2, '0')}`;
 
   if (/^\d{4}-\d{2}-\d{2}$/.test(cleanStart)) {
+    if (cleanStart === cleanEnd && cleanDate === cleanStart) {
+      return {
+        key: cleanDate,
+        label: `${weekday} ${ddmm}`,
+        shortLabel: ddmm,
+        kind: 'trip',
+      };
+    }
     const [sy, sm, sd] = cleanStart.split('-').map(Number);
     const startObj = new Date(Date.UTC(sy, sm - 1, sd));
     const diffDays = Math.floor((dateObj.getTime() - startObj.getTime()) / 86400000) + 1;
@@ -770,6 +780,8 @@ export function buildExpenseReportData(params: {
       bankInfo: debt.toBankInfo,
       total: 0,
       receivedTransferAmount: recBalance?.receivedTransfer || 0,
+      sentTransferAmount: recBalance?.sentTransfer || 0,
+      netTransfer: recBalance?.netTransfer || 0,
       senders: [],
     };
     existing.total += debt.amount;

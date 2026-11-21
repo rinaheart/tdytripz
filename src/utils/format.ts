@@ -218,6 +218,9 @@ export function formatDateRangeVN(startDate: string, endDate: string): string {
   }
   const [y1, m1, d1] = startDate.slice(0, 10).split('-');
   const [y2, m2, d2] = endDate.slice(0, 10).split('-');
+  if (y1 === y2 && m1 === m2 && d1 === d2) {
+    return `${d1}/${m1}/${y1}`;
+  }
   if (y1 === y2 && m1 === m2) {
     return `${d1}–${d2}/${m2}/${y2}`;
   }
@@ -544,8 +547,19 @@ export function formatExpensesForChat(params: {
 }
 
 /**
+ * Định dạng VND dùng dấu cách chuẩn (ASCII space) thay vì NBSP để dán sạch vào Zalo / Messenger
+ */
+function formatChatVND(amount: number, showSymbol = true): string {
+  const clean = Math.round(amount || 0);
+  const formatted = vndNumberFormatter.format(clean);
+  return showSymbol ? `${formatted} ₫` : formatted;
+}
+
+/**
  * Tạo báo cáo quyết toán nhanh định dạng text gọn nhẹ để dán vào Zalo / Messenger.
- * Hỗ trợ đầy đủ username gộp nhóm (VD: "10 thành viên" -> hiển thị rõ mức /người và tổng nhóm).
+ * - Hỗ trợ chế độ ngắn gọn (`includeBalances: false`, mặc định) chỉ gồm tiêu đề, tổng quan, danh sách cần chuyển và STK nhận tiền (gom trùng).
+ * - Hỗ trợ chế độ đầy đủ (`includeBalances: true`) kèm tóm tắt thu chi rõ ràng (Đã CK / Đã nhận, → Trả / → Nhận).
+ * - Hỗ trợ đầy đủ username gộp nhóm (VD: "8 thành viên" -> hiển thị rõ mức /người và tổng nhóm).
  */
 export function formatSettlementReportForChat(params: {
   config?: Partial<TripConfig>;
@@ -554,8 +568,17 @@ export function formatSettlementReportForChat(params: {
   balances: MemberBalance[];
   transactions: DebtTransaction[];
   viewMode: 'simplified' | 'pairwise';
+  includeBalances?: boolean;
 }): string {
-  const { config, members, expenses, balances, transactions, viewMode } = params;
+  const {
+    config,
+    members,
+    expenses,
+    balances,
+    transactions,
+    viewMode,
+    includeBalances = false,
+  } = params;
   const activeRecords = expenses.filter((e) => !e.deleted);
   const activeExpenses = activeRecords.filter((e) => e.type !== 'transfer');
   const activeTransfers = activeRecords.filter((e) => e.type === 'transfer');
@@ -591,24 +614,28 @@ export function formatSettlementReportForChat(params: {
       ? `📊 QUYẾT TOÁN: ${titleWithLocation} (${dateRange})`
       : `📊 QUYẾT TOÁN: ${titleWithLocation}`
   );
-  lines.push(
-    `Tổng chi: ${formatVND(totalExpense, true)} (${activeExpenses.length} khoản) • ${headcount} người`
-  );
+
+  const metaParts: string[] = [`${activeExpenses.length} khoản`, `${headcount} người`];
   if (headcount > 0 && totalExpense > 0) {
-    lines.push(`Bình quân: ~${formatVND(avgPerPerson, true)}/người`);
+    metaParts.push(`~${formatChatVND(avgPerPerson, true)}/người`);
   }
+  lines.push(`Tổng chi: ${formatChatVND(totalExpense, true)} (${metaParts.join(' · ')})`);
+
   if (activeTransfers.length > 0) {
     lines.push(
-      `Đã chuyển trả: ${formatVND(totalTransfer, true)} (${activeTransfers.length} giao dịch)`
+      `Đã chuyển trước: ${formatChatVND(totalTransfer, true)} (${activeTransfers.length} giao dịch)`
     );
   }
 
   lines.push('');
   const modeLabel = viewMode === 'simplified' ? 'Tối giản' : 'Từng cặp';
+  const recipientBankLines: string[] = [];
+  const seenRecipientIds = new Set<string>();
+
   if (transactions.length === 0) {
     lines.push('✅ CẦN CHUYỂN: Không có khoản nợ nào (đã cân bằng).');
   } else {
-    lines.push(`💸 CẦN CHUYỂN (${modeLabel} - ${transactions.length} khoản):`);
+    lines.push(`💸 CẦN CHUYỂN (${modeLabel} · ${transactions.length} khoản):`);
     transactions.forEach((tx, idx) => {
       const sender = memberMap.get(tx.fromMemberId);
       const recipient = memberMap.get(tx.toMemberId);
@@ -626,66 +653,94 @@ export function formatSettlementReportForChat(params: {
       if (senderSplit) {
         const approx = senderSplit.isExact ? '' : '~';
         lines.push(
-          `${idx + 1}. ${sender.name} → ${recipient.name}: ${approx}${formatVND(senderSplit.perPerson, true)}/người (Tổng ${senderGroupSize} người: ${formatVND(tx.amount, true)})`
+          `${idx + 1}. ${sender.name} → ${recipient.name}: ${approx}${formatChatVND(senderSplit.perPerson, true)}/người (tổng ${senderGroupSize} người: ${formatChatVND(tx.amount, true)})`
         );
       } else if (recipientSplit) {
         const approx = recipientSplit.isExact ? '' : '~';
         lines.push(
-          `${idx + 1}. ${sender.name} → ${recipient.name}: ${formatVND(tx.amount, true)} (${approx}${formatVND(recipientSplit.perPerson, true)}/người)`
+          `${idx + 1}. ${sender.name} → ${recipient.name}: ${formatChatVND(tx.amount, true)} (${approx}${formatChatVND(recipientSplit.perPerson, true)}/người)`
         );
       } else {
-        lines.push(`${idx + 1}. ${sender.name} → ${recipient.name}: ${formatVND(tx.amount, true)}`);
+        lines.push(
+          `${idx + 1}. ${sender.name} → ${recipient.name}: ${formatChatVND(tx.amount, true)}`
+        );
       }
 
-      const cleanAccountNo = String(recipient.accountNo || '')
-        .replace(/\s+/g, '')
-        .replace(/^'+/, '');
-      if (cleanAccountNo) {
-        const bankSuffix = recipient.bankName ? ` (${recipient.bankName.trim()})` : '';
-        const holderSuffix = recipient.accountHolder ? ` - ${recipient.accountHolder.trim()}` : '';
-        lines.push(`   STK: ${cleanAccountNo}${bankSuffix}${holderSuffix}`);
+      if (!seenRecipientIds.has(recipient.id)) {
+        const cleanAccountNo = String(recipient.accountNo || '')
+          .replace(/\s+/g, '')
+          .replace(/^'+/, '');
+        if (cleanAccountNo) {
+          seenRecipientIds.add(recipient.id);
+          const bankSuffix = recipient.bankName ? ` (${recipient.bankName.trim()})` : '';
+          const holderSuffix = recipient.accountHolder ? ` - ${recipient.accountHolder.trim()}` : '';
+          recipientBankLines.push(
+            `• ${recipient.name}: ${cleanAccountNo}${bankSuffix}${holderSuffix}`
+          );
+        }
       }
     });
   }
 
-  const sortedBalances = [...balances].sort((a, b) => {
-    const nameA = memberMap.get(a.memberId)?.name || '';
-    const nameB = memberMap.get(b.memberId)?.name || '';
-    return nameA.localeCompare(nameB, 'vi');
-  });
-
-  if (sortedBalances.length > 0) {
+  if (recipientBankLines.length > 0) {
     lines.push('');
-    lines.push('📌 BẢNG CÂN ĐỐI (₫):');
-    for (const row of sortedBalances) {
-      const member = memberMap.get(row.memberId);
-      if (!member) continue;
-      const groupSize = getMemberGroupSize(member);
-      const balSign = row.balance > 0 ? '+' : '';
-      const paidStr = formatVND(row.paidExpense, false);
-      const owedStr = formatVND(row.owedExpense, false);
-      const balStr = `${balSign}${formatVND(row.balance, false)}`;
-      const transferPart =
-        row.netTransfer !== 0
-          ? ` | CK ${row.netTransfer > 0 ? '+' : ''}${formatVND(row.netTransfer, false)}`
-          : '';
+    lines.push('🏦 STK NHẬN TIỀN:');
+    lines.push(...recipientBankLines);
+  }
 
-      if (groupSize > 1) {
-        const owedSplit = splitPerGroupMember(row.owedExpense, groupSize);
-        const balSplit = splitPerGroupMember(row.balance, groupSize);
-        const owedPerStr =
-          row.owedExpense > 0
-            ? ` (${owedSplit.isExact ? '' : '~'}${formatVND(owedSplit.perPerson, false)}/ng)`
-            : '';
-        const balPerStr =
-          row.balance !== 0
-            ? ` (${balSplit.isExact ? '' : '~'}${balSplit.perPerson > 0 ? '+' : ''}${formatVND(balSplit.perPerson, false)}/ng)`
-            : '';
-        lines.push(
-          `• ${member.name} (÷${groupSize}): Chi ${paidStr} | Chịu ${owedStr}${owedPerStr}${transferPart} | ${balStr}${balPerStr}`
-        );
-      } else {
-        lines.push(`• ${member.name}: Chi ${paidStr} | Chịu ${owedStr}${transferPart} | ${balStr}`);
+  if (includeBalances) {
+    const sortedBalances = [...balances].sort((a, b) => {
+      const nameA = memberMap.get(a.memberId)?.name || '';
+      const nameB = memberMap.get(b.memberId)?.name || '';
+      return nameA.localeCompare(nameB, 'vi');
+    });
+
+    if (sortedBalances.length > 0) {
+      lines.push('');
+      lines.push('📌 TÓM TẮT THU CHI (₫):');
+      for (const row of sortedBalances) {
+        const member = memberMap.get(row.memberId);
+        if (!member) continue;
+        const groupSize = getMemberGroupSize(member);
+        const paidStr = formatChatVND(row.paidExpense, false);
+        const owedStr = formatChatVND(row.owedExpense, false);
+        const transferPart =
+          row.netTransfer > 0
+            ? ` · Đã CK ${formatChatVND(row.netTransfer, false)}`
+            : row.netTransfer < 0
+              ? ` · Đã nhận ${formatChatVND(Math.abs(row.netTransfer), false)}`
+              : '';
+
+        if (groupSize > 1) {
+          const owedSplit = splitPerGroupMember(row.owedExpense, groupSize);
+          const absBal = Math.abs(row.balance);
+          const balSplit = splitPerGroupMember(absBal, groupSize);
+          const owedDisplay =
+            row.owedExpense > 0
+              ? `${owedSplit.isExact ? '' : '~'}${formatChatVND(owedSplit.perPerson, false)}/ng`
+              : '0';
+          const outcomeText =
+            row.balance > 0
+              ? `→ Nhận ${balSplit.isExact ? '' : '~'}${formatChatVND(balSplit.perPerson, false)}/ng (tổng ${formatChatVND(absBal, false)})`
+              : row.balance < 0
+                ? `→ Trả ${balSplit.isExact ? '' : '~'}${formatChatVND(balSplit.perPerson, false)}/ng (tổng ${formatChatVND(absBal, false)})`
+                : '→ Đủ 0';
+
+          lines.push(
+            `• ${member.name} (÷${groupSize}): Chi ${paidStr} · Chịu ${owedDisplay}${transferPart} ${outcomeText}`
+          );
+        } else {
+          const outcomeText =
+            row.balance > 0
+              ? `→ Nhận ${formatChatVND(row.balance, false)}`
+              : row.balance < 0
+                ? `→ Trả ${formatChatVND(Math.abs(row.balance), false)}`
+                : '→ Đủ 0';
+
+          lines.push(
+            `• ${member.name}: Chi ${paidStr} · Chịu ${owedStr}${transferPart} ${outcomeText}`
+          );
+        }
       }
     }
   }

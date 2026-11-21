@@ -47,6 +47,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
   onShowToast,
 }) => {
   const [viewMode, setViewMode] = useState<'simplified' | 'pairwise'>('simplified');
+  const [reportDetailMode, setReportDetailMode] = useState<'compact' | 'full'>('compact');
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
   const [showQuickReportPreview, setShowQuickReportPreview] = useState(false);
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -145,8 +146,9 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
         balances,
         transactions: activeTransactions,
         viewMode,
+        includeBalances: reportDetailMode === 'full',
       }),
-    [config, members, expenses, balances, activeTransactions, viewMode]
+    [config, members, expenses, balances, activeTransactions, viewMode, reportDetailMode]
   );
 
   const handleCopyQuickReport = async () => {
@@ -154,7 +156,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
     const ok = await copyToClipboard(quickReportText);
     if (ok) {
       setCopiedKey('quick_report');
-      onShowToast('Đã sao chép báo cáo nhanh — sẵn sàng dán Zalo/Messenger');
+      onShowToast('Đã sao chép quyết toán — sẵn sàng dán Zalo/Messenger');
       scheduleClearCopied(2000);
     } else {
       setShowQuickReportPreview(true);
@@ -164,7 +166,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
 
   return (
     <div className="space-y-4">
-      {/* Thanh hành động nhanh: Xuất báo cáo text gọn nhẹ gửi Zalo / Messenger */}
+      {/* Thanh hành động nhanh: Copy quyết toán gửi Zalo / Messenger */}
       <section className="p-3 rounded-2xl bg-white/95 backdrop-blur-xs border border-slate-200/90 shadow-2xs space-y-2.5">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2 min-w-0">
@@ -172,8 +174,12 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
               <FileText aria-hidden="true" className="w-4 h-4" />
             </div>
             <div className="min-w-0">
-              <div className="text-xs font-bold text-slate-800 truncate">Gửi nhóm</div>
-              <div className="text-[11px] text-slate-500 truncate">Zalo · Messenger</div>
+              <div className="text-xs font-bold text-slate-800 truncate">Gửi Zalo · Messenger</div>
+              <div className="text-[11px] text-slate-500 truncate">
+                {reportDetailMode === 'compact'
+                  ? 'Danh sách cần chuyển + STK'
+                  : 'Kèm tóm tắt thu chi từng người'}
+              </div>
             </div>
           </div>
 
@@ -182,9 +188,9 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
               type="button"
               onClick={() => setShowQuickReportPreview((prev) => !prev)}
               aria-expanded={showQuickReportPreview}
-              aria-label={showQuickReportPreview ? 'Ẩn xem trước báo cáo nhanh' : 'Xem trước báo cáo nhanh'}
+              aria-label={showQuickReportPreview ? 'Ẩn xem trước quyết toán' : 'Xem trước quyết toán'}
               title={showQuickReportPreview ? 'Ẩn xem trước' : 'Xem trước nội dung'}
-              className={`w-9 h-9 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
+              className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-colors cursor-pointer ${
                 showQuickReportPreview
                   ? 'border-brand/40 bg-brand-soft text-brand'
                   : 'border-slate-200 bg-slate-50/70 hover:bg-slate-100 text-slate-600'
@@ -200,7 +206,7 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
             <button
               type="button"
               onClick={handleCopyQuickReport}
-              className="min-h-[38px] px-3 sm:px-3.5 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
+              className="min-h-[40px] px-3.5 py-1.5 rounded-xl bg-brand hover:bg-brand-hover text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer shadow-xs"
             >
               {copiedKey === 'quick_report' ? (
                 <>
@@ -210,9 +216,39 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
               ) : (
                 <>
                   <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
-                  <span>Xuất báo cáo nhanh</span>
+                  <span>Copy quyết toán</span>
                 </>
               )}
+            </button>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+          <span className="text-[11px] font-medium text-slate-500">Nội dung copy</span>
+          <div className="grid grid-cols-2 p-0.5 bg-slate-100 rounded-lg shrink-0">
+            <button
+              type="button"
+              aria-pressed={reportDetailMode === 'compact'}
+              onClick={() => setReportDetailMode('compact')}
+              className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                reportDetailMode === 'compact'
+                  ? 'bg-white text-brand shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Ngắn gọn
+            </button>
+            <button
+              type="button"
+              aria-pressed={reportDetailMode === 'full'}
+              onClick={() => setReportDetailMode('full')}
+              className={`min-h-[30px] px-2.5 py-1 rounded-md text-[11px] font-bold transition-all whitespace-nowrap cursor-pointer ${
+                reportDetailMode === 'full'
+                  ? 'bg-white text-brand shadow-2xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Đầy đủ
             </button>
           </div>
         </div>
@@ -221,9 +257,10 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
           <div className="pt-2 border-t border-slate-100 space-y-1.5">
             <div className="flex items-center justify-between text-[11px] text-slate-500">
               <span className="font-semibold">
-                Xem trước ({viewMode === 'simplified' ? 'Tối giản' : 'Từng cặp'})
+                Xem trước ({viewMode === 'simplified' ? 'Tối giản' : 'Từng cặp'} ·{' '}
+                {reportDetailMode === 'compact' ? 'Ngắn gọn' : 'Đầy đủ'})
               </span>
-              <span>Chạm giữ hoặc bấm sao chép</span>
+              <span>Chạm giữ hoặc bấm copy</span>
             </div>
             <pre className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 text-[11px] leading-relaxed font-mono text-slate-700 whitespace-pre-wrap break-words select-all max-h-64 overflow-y-auto">
               {quickReportText}
@@ -481,8 +518,9 @@ export const SettlementTab: React.FC<SettlementTabProps> = React.memo(({
                           )}
                           {row.netTransfer !== 0 && (
                             <div className="text-[9.5px] sm:text-[10px] font-mono text-amber-700 tabular-nums tracking-tight whitespace-nowrap">
-                              {row.netTransfer > 0 ? 'CK: +' : 'Nhận: '}
-                              {formatVND(row.netTransfer, false)}
+                              {row.netTransfer > 0
+                                ? `Đã CK: ${formatVND(row.netTransfer, false)}`
+                                : `Đã nhận: ${formatVND(Math.abs(row.netTransfer), false)}`}
                             </div>
                           )}
                         </div>
